@@ -3,21 +3,15 @@ services:
     image: postgres:16
     env_file:
       - .env
-    environment:
-      POSTGRES_DB: "${POSTGRES_DB}"
-      POSTGRES_USER: "${POSTGRES_USER}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
   redis:
     image: redis:7
-    env_file:
-      - .env
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT}:6379"
 
   app:
     build:
@@ -25,13 +19,6 @@ services:
       dockerfile: docker/app.Dockerfile
     env_file:
       - .env
-    environment:
-      # application will build DATABASE_URL from POSTGRES_* if DATABASE_URL not explicitly set
-      # but we still set DATABASE_URL here for convenience using interpolation
-      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT}/${POSTGRES_DB}"
-      REDIS_URL: "${REDIS_URL}"
-      APP_ENV: "${APP_ENV}"
-      SECRET_KEY: "${SECRET_KEY}"
     depends_on:
       - postgres
       - redis
@@ -47,9 +34,6 @@ services:
       dockerfile: docker/app.Dockerfile
     env_file:
       - .env
-    environment:
-      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT}/${POSTGRES_DB}"
-      REDIS_URL: "${REDIS_URL}"
     depends_on:
       - redis
       - postgres
