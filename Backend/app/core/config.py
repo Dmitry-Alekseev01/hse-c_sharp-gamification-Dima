@@ -27,6 +27,18 @@ class Settings(BaseSettings):
     postgres_host: str = Field("postgres", env="POSTGRES_HOST")
     postgres_port: int = Field(5432, env="POSTGRES_PORT")
 
+    # secret / auth
+    secret_key: str = Field("replace-me-please-change", env="SECRET_KEY")
+    algorithm: str = Field("HS256", env="ALGORITHM")
+    access_token_expire_minutes: int = Field(60 * 24, env="ACCESS_TOKEN_EXPIRE_MINUTES")
+    db_auto_create: bool = Field(False, env="DB_AUTO_CREATE")
+
+    # OAuth2 settings (token url used by OAuth2PasswordBearer)
+    oauth2_token_url: str = Field("/api/v1/auth/token", env="OAUTH2_TOKEN_URL")
+
+    # password hashing schemes (comma-separated in env, default bcrypt)
+    hash_schemes: str = Field("bcrypt", env="HASH_SCHEMES")
+
     # Redis
     redis_url: str = Field("redis://redis:6379/0", env="REDIS_URL")
 

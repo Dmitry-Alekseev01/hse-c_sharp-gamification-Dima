@@ -8,6 +8,7 @@ class Answer(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     test_id = Column(Integer, ForeignKey("tests.id"), nullable=False, index=True)
+    attempt_id = Column(Integer, ForeignKey("test_attempts.id"), nullable=True, index=True)
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False, index=True)
     answer_payload = Column(Text, nullable=True)  # MCQ: choice.id as string; open: free text
     score = Column(Float, nullable=True)
@@ -34,5 +35,12 @@ class Answer(Base):
         "Question",
         back_populates="answers",
         foreign_keys=[question_id],
+        lazy="selectin",
+    )
+
+    attempt = relationship(
+        "TestAttempt",
+        back_populates="answers",
+        foreign_keys=[attempt_id],
         lazy="selectin",
     )

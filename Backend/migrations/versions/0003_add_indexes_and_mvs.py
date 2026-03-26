@@ -13,6 +13,19 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
+    op.create_table(
+        "choices",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("question_id", sa.Integer(), sa.ForeignKey("questions.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("value", sa.String(length=1000), nullable=False),
+        sa.Column("ordinal", sa.Integer(), nullable=True),
+        sa.Column("is_correct", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+    )
+
+    with op.batch_alter_table("questions") as batch_op:
+        batch_op.drop_column("options")
+        batch_op.drop_column("correct_answer")
+
     # Indexes
     op.create_index("ix_tests_published", "tests", ["published"])
     op.create_index("ix_questions_test_id", "questions", ["test_id"])
@@ -21,7 +34,6 @@ def upgrade():
     op.create_index("ix_answers_question_id", "answers", ["question_id"])
     op.create_index("ix_answers_user_test", "answers", ["user_id", "test_id"])
     op.create_index("ix_answers_created_at", "answers", ["created_at"])
-    op.create_index("ix_analytics_user_id", "analytics", ["user_id"], unique=True)
 
     # Materialized view: leaderboard
     op.execute("""
@@ -78,4 +90,9 @@ def downgrade():
     op.drop_index("ix_choices_question_id", table_name="choices")
     op.drop_index("ix_questions_test_id", table_name="questions")
     op.drop_index("ix_tests_published", table_name="tests")
-    op.drop_index("ix_analytics_user_id", table_name="analytics")
+
+    with op.batch_alter_table("questions") as batch_op:
+        batch_op.add_column(sa.Column("correct_answer", sa.Text(), nullable=True))
+        batch_op.add_column(sa.Column("options", sa.Text(), nullable=True))
+
+    op.drop_table("choices")
