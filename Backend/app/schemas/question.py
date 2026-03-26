@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict
 from typing import List
 
 class ChoiceCreate(BaseModel):
+    question_id: int | None = None
     value: str
     ordinal: int | None = None
     is_correct: bool = False
@@ -20,6 +21,7 @@ class QuestionCreate(BaseModel):
     text: str
     points: float = 1.0
     is_open_answer: bool = False
+    material_urls: List[str] | None = None
     choices: List[ChoiceCreate] | None = None
 
 class QuestionRead(BaseModel):
@@ -28,6 +30,7 @@ class QuestionRead(BaseModel):
     text: str
     points: float
     is_open_answer: bool
+    material_urls: List[str] | None = None
     choices: List[ChoiceRead] | None = None
 
     model_config = ConfigDict(from_attributes=True)

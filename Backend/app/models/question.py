@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Text, Boolean, Float, ForeignKey
+from sqlalchemy import Column, Integer, Text, Boolean, Float, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
@@ -10,6 +10,7 @@ class Question(Base):
     text = Column(Text, nullable=False)
     points = Column(Float, default=1.0, nullable=False)
     is_open_answer = Column(Boolean, default=False, nullable=False)
+    material_urls = Column(JSON, nullable=True)
 
     # Question.test <-> Test.questions
     test = relationship(

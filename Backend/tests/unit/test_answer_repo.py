@@ -1,61 +1,113 @@
+# tests/unit/test_answer_repo.py
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest_asyncio
-
-from app.repositories import answer_repo
-from app.models.answer import Answer
-from app.models.choice import Choice
+pytestmark = pytest.mark.asyncio
+from app.repositories.answer_repo import record_answer, grade_mcq_answer, get_pending_open_answers
+from app.models.user import User
+from app.models.test_ import Test as TestModel
 from app.models.question import Question
+from app.models.choice import Choice
+from app.models.answer import Answer
+
+@pytest.mark.asyncio
+async def test_record_and_grade_mcq_correct(session):
+    # create user, test, question, choice
+    u = User(username="u1", password_hash="x")
+    session.add(u)
+    await session.flush()
+    await session.refresh(u)
+
+    t = TestModel(title="t1")
+    session.add(t)
+    await session.flush()
+    await session.refresh(t)
+
+    q = Question(test_id=t.id, text="2+2?", points=5.0, is_open_answer=False)
+    session.add(q)
+    await session.flush()
+    await session.refresh(q)
+
+    # correct choice
+    c_wrong = Choice(question_id=q.id, value="3", ordinal=1, is_correct=False)
+    c_right = Choice(question_id=q.id, value="4", ordinal=2, is_correct=True)
+    session.add_all([c_wrong, c_right])
+    await session.flush()
+    await session.refresh(c_right)
+
+    # record answer using record_answer (payload is stringified choice id)
+    ans = await record_answer(session, user_id=u.id, test_id=t.id, question_id=q.id, payload=str(c_right.id))
+    assert isinstance(ans, Answer)
+    assert ans.answer_payload == str(c_right.id)
+
+    # grade it
+    graded = await grade_mcq_answer(session, ans.id)
+    assert graded is not None
+    # correct -> full points
+    assert graded.score == pytest.approx(5.0)
 
 
 @pytest.mark.asyncio
-async def test_grade_mcq_answer_correct_choice():
-    # Arrange: create a fake answer with payload "2"
-    ans = Answer(id=10, user_id=1, test_id=1, question_id=1, answer_payload="2", score=None)
+async def test_grade_mcq_bad_payload_no_crash(session):
+    # create minimal entities
+    u = User(username="u2", password_hash="x"); session.add(u)
+    t = TestModel(title="t2"); session.add(t)
+    await session.flush()
+    await session.refresh(u); await session.refresh(t)
+    q = Question(test_id=t.id, text="free", points=2.0, is_open_answer=False)
+    session.add(q); await session.flush(); await session.refresh(q)
 
-    # mock session.get to return our answer
-    mock_session = AsyncMock()
-    mock_session.get = AsyncMock(return_value=ans)
-
-    # prepare mock Choice and Question returned by execute().first()
-    choice = Choice(id=2, question_id=1, value="a", is_correct=True)
-    question = Question(id=1, test_id=1, text="Q", points=2.5, is_open_answer=False)
-
-    # mock result of session.execute(stmt).first() -> (choice, question)
-    mock_result = MagicMock()
-    mock_result.first = MagicMock(return_value=(choice, question))
-    mock_session.execute = AsyncMock(return_value=mock_result)
-
-    # mock commit/refresh to be async no-op
-    mock_session.commit = AsyncMock()
-    mock_session.refresh = AsyncMock()
-
-    # Act
-    updated = await answer_repo.grade_mcq_answer(mock_session, ans.id)
-
-    # Assert
-    assert updated is not None
-    # since choice.is_correct True and question.points=2.5 -> score should be 2.5
-    assert float(updated.score) == 2.5
-    # ensure commit was called
-    mock_session.commit.assert_awaited()
+    # record answer with non-int payload
+    ans = await record_answer(session, user_id=u.id, test_id=t.id, question_id=q.id, payload="not-an-int")
+    # attempt grading - should not raise and should leave score None
+    graded = await grade_mcq_answer(session, ans.id)
+    assert graded is not None
+    assert graded.score is None
 
 
 @pytest.mark.asyncio
-async def test_grade_mcq_answer_bad_payload_does_not_raise_and_leaves_score_none():
-    # Arrange: answer with a non-integer payload
-    ans = Answer(id=11, user_id=1, test_id=1, question_id=1, answer_payload="not-an-int", score=None)
-    mock_session = AsyncMock()
-    mock_session.get = AsyncMock(return_value=ans)
+async def test_get_pending_open_answers_returns_only_ungraded_open_answers(session):
+    teacher = User(username="teacher_pending", password_hash="x", role="teacher")
+    student = User(username="student_pending", password_hash="x", role="user")
+    session.add_all([teacher, student])
+    await session.flush()
+    await session.refresh(student)
 
-    # Ensure execute is not called (since parse fails). But even if called, it should be safe.
-    mock_session.execute = AsyncMock()
+    test = TestModel(title="pending-open")
+    session.add(test)
+    await session.flush()
+    await session.refresh(test)
 
-    # Act - should not raise
-    updated = await answer_repo.grade_mcq_answer(mock_session, ans.id)
+    open_question = Question(test_id=test.id, text="Explain abstraction", points=5.0, is_open_answer=True)
+    mcq_question = Question(test_id=test.id, text="2+2?", points=1.0, is_open_answer=False)
+    session.add_all([open_question, mcq_question])
+    await session.flush()
+    await session.refresh(open_question)
+    await session.refresh(mcq_question)
 
-    # Assert: returned object is the same answer with score unchanged (None)
-    assert updated is not None
-    assert updated.score is None
+    pending_answer = Answer(
+        user_id=student.id,
+        test_id=test.id,
+        question_id=open_question.id,
+        answer_payload="free text",
+        score=None,
+    )
+    graded_open_answer = Answer(
+        user_id=student.id,
+        test_id=test.id,
+        question_id=open_question.id,
+        answer_payload="already checked",
+        score=4.0,
+        graded_by=teacher.id,
+    )
+    mcq_answer = Answer(
+        user_id=student.id,
+        test_id=test.id,
+        question_id=mcq_question.id,
+        answer_payload="1",
+        score=None,
+    )
+    session.add_all([pending_answer, graded_open_answer, mcq_answer])
+    await session.flush()
+
+    pending = await get_pending_open_answers(session)
+
+    assert [answer.id for answer in pending] == [pending_answer.id]
