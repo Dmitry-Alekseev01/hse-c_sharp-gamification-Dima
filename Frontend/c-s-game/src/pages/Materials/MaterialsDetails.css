@@ -29,7 +29,6 @@
 
 .back-button:hover {
   background: rgba(255, 255, 255, 0.3);
-  transform: translateX(-3px);
 }
 
 .material-details-header h1 {
