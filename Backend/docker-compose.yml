@@ -40,7 +40,13 @@ services:
       - "${APP_PORT}:8000"
     volumes:
       - ./:/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["sh", "/app/start.sh"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   worker:
     build:
@@ -53,7 +59,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["python", "-u", "-m", "app.tasks.worker"]
+      app:
+        condition: service_healthy
+    command: ["sh", "/app/scripts/start_worker.sh"]
 
 volumes:
   pgdata:
