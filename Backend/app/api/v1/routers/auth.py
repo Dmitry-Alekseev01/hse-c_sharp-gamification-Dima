@@ -7,7 +7,7 @@ from app.api.deps import get_db
 from app.schemas.user import UserRead, UserCreate
 from app.schemas.token import TokenRead
 from app.repositories import auth_repo
-from app.core.security import create_access_token, settings, get_current_user
+from app.core.security import create_access_token, get_current_user
 from app.models.user import User
 
 router = APIRouter()
@@ -19,15 +19,12 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password",
                             headers={"WWW-Authenticate": "Bearer"})
-    access_token = create_access_token({"sub": user.username})
+    access_token = create_access_token({"sub": user.username, "role": user.role})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def register_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    # Optional: check existing user
-    existing = await auth_repo.authenticate_user(db, payload.username, payload.password)  # quick existence check
-    # note: above uses password — if exists returns user; else None. For robust check, call get_user_by_username
     from app.repositories.user_repo import get_user_by_username
     if await get_user_by_username(db, payload.username):
         raise HTTPException(status_code=400, detail="Username already taken")

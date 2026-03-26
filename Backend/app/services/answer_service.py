@@ -6,16 +6,17 @@ Orchestration service for answers:
 - invalidate cache
 - queue open-answer jobs for manual grading
 """
+from datetime import datetime
 import json
 from typing import Optional
 
-from app.repositories import answer_repo, analytics_repo
+from app.repositories import answer_repo, analytics_repo, test_attempt_repo
+from app.models.answer import Answer
 from app.models.question import Question
-from app.cache.redis_cache import get_redis_client, delete_pattern, cache_key_test_summary, cache_key_leaderboard
-from app.db.session import AsyncSessionLocal
+from app.cache.redis_cache import get_redis_client, delete_pattern
 
 
-async def submit_answer(session, user_id: int, test_id: int, question_id: int, payload: str):
+async def submit_answer(session, user_id: int, test_id: int, question_id: int, payload: str, attempt_id: int | None = None):
     """
     High-level flow:
     1) persist answer
@@ -26,7 +27,7 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
     Returns the Answer object (possibly graded).
     """
     # 1) persist
-    ans = await answer_repo.record_answer(session, user_id, test_id, question_id, payload)
+    ans = await answer_repo.record_answer(session, user_id, test_id, question_id, payload, attempt_id=attempt_id)
 
     # 2) load question (to decide open vs MCQ)
     question: Optional[Question] = await session.get(Question, question_id)
@@ -69,3 +70,37 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
         pass
 
     return graded if graded is not None else ans
+
+
+async def manual_grade_open_answer(session, answer_id: int, grader_id: int, score: float) -> Answer:
+    answer: Optional[Answer] = await session.get(Answer, answer_id)
+    if answer is None:
+        raise LookupError("Answer not found")
+
+    question: Optional[Question] = await session.get(Question, answer.question_id)
+    if question is None:
+        raise LookupError("Question not found")
+    if not question.is_open_answer:
+        raise ValueError("Manual grading is allowed only for open-answer questions")
+
+    max_score = float(question.points)
+    normalized_score = float(score)
+    if normalized_score < 0 or normalized_score > max_score:
+        raise ValueError(f"Score must be between 0 and {max_score}")
+
+    previous_score = float(answer.score or 0.0)
+    answer.score = normalized_score
+    answer.graded_by = grader_id
+    answer.graded_at = datetime.utcnow()
+    await session.flush()
+    await session.refresh(answer)
+
+    delta = normalized_score - previous_score
+    if delta != 0:
+        await analytics_repo.apply_points_delta(session, answer.user_id, delta)
+        if answer.attempt_id is not None:
+            attempt = await test_attempt_repo.get_attempt(session, answer.attempt_id)
+            if attempt is not None:
+                await test_attempt_repo.refresh_attempt_scores(session, attempt)
+
+    return answer

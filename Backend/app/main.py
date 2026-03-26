@@ -15,7 +15,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
 from app.health.endpoints import router as health_router
-from app.api.v1.routers import users, materials, tests, answers, choices, levels, questions, analytics, auth 
+from app.api.v1.routers import users, materials, tests, answers, choices, levels, questions, analytics, auth, groups 
 from app.db.session import engine, Base
 from app.cache.redis_client import redis_client
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(questions.router, prefix="/api/v1/questions", tags=["questions"])
     app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
     app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+    app.include_router(groups.router, prefix="/api/v1/groups", tags=["groups"])
 
 
     @app.on_event("startup")
@@ -59,15 +60,15 @@ def create_app() -> FastAPI:
             # don't raise — keep app running (readiness probe will be unhealthy).
             # If you need fail-fast in CI/prod, raise here.
 
-        # For development convenience only: create tables if DB accessible
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database schema ensured (create_all)")
-        except OperationalError as e:
-            logger.warning("Skipping create_all because DB not available: %s", e)
-        except Exception as e:
-            logger.warning("create_all skipped: %s", e)
+        if settings.db_auto_create:
+            try:
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                logger.info("Database schema ensured (create_all)")
+            except OperationalError as e:
+                logger.warning("Skipping create_all because DB not available: %s", e)
+            except Exception as e:
+                logger.warning("create_all skipped: %s", e)
 
         # init redis
         try:
@@ -85,7 +86,5 @@ def create_app() -> FastAPI:
         await engine.dispose()
 
     return app
-
-print(f"DEBUG: answers router is: {answers.router}")
 
 app = create_app()

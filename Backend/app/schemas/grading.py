@@ -1,10 +1,8 @@
 # app/schemas/grading.py
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 class GradeRequest(BaseModel):
-    answer_id: int
-    grader_id: int
-    score: float
+    score: float = Field(..., ge=0)
     comment: str | None = None
 
 class GradeResponse(BaseModel):

@@ -6,6 +6,7 @@ from app.models.analytics import Analytics
 from app.models.user import User
 from app.models.answer import Answer
 from app.models.level import Level
+from app.models.test_attempt import TestAttempt
 
 
 async def get_analytics_for_user(session: AsyncSession, user_id: int) -> Optional[Analytics]:
@@ -50,6 +51,18 @@ async def create_or_update_analytics(
 
 async def get_user_analytics(session: AsyncSession, user_id: int) -> Optional[Analytics]:
     return await get_analytics_for_user(session, user_id)
+
+
+async def apply_points_delta(session: AsyncSession, user_id: int, points_delta: float) -> Analytics:
+    analytics = await get_analytics_for_user(session, user_id)
+    if analytics is None:
+        analytics = Analytics(user_id=user_id, total_points=0.0, tests_taken=0)
+        session.add(analytics)
+        await session.flush()
+
+    analytics.total_points = float(analytics.total_points or 0.0) + float(points_delta)
+    await session.flush()
+    return analytics
 
 
 async def get_leaderboard(session: AsyncSession, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
@@ -118,8 +131,42 @@ async def question_statistics(session: AsyncSession, question_id: int) -> Dict[s
 
 
 async def average_score_per_test(session: AsyncSession, test_id: int) -> Optional[float]:
-    avg_ = await session.scalar(select(func.avg(Answer.score)).where(Answer.test_id == test_id))
+    avg_ = await session.scalar(
+        select(func.avg(TestAttempt.score)).where(
+            TestAttempt.test_id == test_id,
+            TestAttempt.status == "completed",
+        )
+    )
+    if avg_ is None:
+        avg_ = await session.scalar(select(func.avg(Answer.score)).where(Answer.test_id == test_id))
     return float(avg_) if avg_ is not None else None
+
+
+async def average_time_per_test(session: AsyncSession, test_id: int) -> Optional[float]:
+    avg_ = await session.scalar(
+        select(func.avg(TestAttempt.time_spent_seconds)).where(
+            TestAttempt.test_id == test_id,
+            TestAttempt.status == "completed",
+        )
+    )
+    return float(avg_) if avg_ is not None else None
+
+
+async def completed_attempt_summary_for_test(session: AsyncSession, test_id: int) -> Dict[str, Any]:
+    completed_attempts = await session.scalar(
+        select(func.count(TestAttempt.id)).where(
+            TestAttempt.test_id == test_id,
+            TestAttempt.status == "completed",
+        )
+    )
+    avg_score = await average_score_per_test(session, test_id)
+    avg_time = await average_time_per_test(session, test_id)
+    return {
+        "test_id": test_id,
+        "completed_attempts": int(completed_attempts or 0),
+        "avg_score": avg_score,
+        "avg_time_seconds": avg_time,
+    }
 
 
 async def daily_active_users(session: AsyncSession, days: int = 7):

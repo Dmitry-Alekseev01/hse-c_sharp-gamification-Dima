@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
+from typing import List
 
 class TestCreate(BaseModel):
     __test__ = False 
@@ -9,6 +10,20 @@ class TestCreate(BaseModel):
     max_score: int | None = None
     published: bool = False
     material_id: int | None = None
+    material_ids: List[int] | None = None
+    deadline: datetime | None = None
+
+
+class TestUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    time_limit_minutes: int | None = None
+    max_score: int | None = None
+    published: bool | None = None
+    material_id: int | None = None
+    material_ids: List[int] | None = None
+    deadline: datetime | None = None
+
 
 class TestRead(BaseModel):
     __test__ = False 
@@ -20,5 +35,7 @@ class TestRead(BaseModel):
     published: bool
     published_at: datetime | None
     material_id: int | None
+    material_ids: List[int]
+    deadline: datetime | None
 
     model_config = ConfigDict(from_attributes=True)

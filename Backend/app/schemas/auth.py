@@ -8,7 +8,7 @@ class Token(BaseModel):
     expires_at: datetime | None = None
 
 class TokenPayload(BaseModel):
-    sub: int  # user_id
+    sub: str
     exp: int
     role: str | None = None
 

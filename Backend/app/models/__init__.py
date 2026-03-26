@@ -10,3 +10,6 @@ from app.models import question  # noqa: F401
 from app.models import choice  # noqa: F401
 from app.models import answer  # noqa: F401
 from app.models import analytics  # noqa: F401
+from app.models import associations  # noqa: F401
+from app.models import test_attempt  # noqa: F401
+from app.models import group  # noqa: F401

@@ -23,7 +23,9 @@ class TestSummary(BaseModel):
     test_id: int
     total_questions: int
     total_attempts: int
+    completed_attempts: int
     avg_score: float | None
+    avg_time_seconds: float | None
 
     model_config = ConfigDict(from_attributes=True)
 
