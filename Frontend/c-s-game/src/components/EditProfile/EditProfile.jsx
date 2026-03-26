@@ -1,4 +1,3 @@
-// src/pages/Authorisation/EditProfile.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PERSONAL_ACCOUNT_ROUTE } from '../../routing/const';
@@ -12,7 +11,6 @@ const EditProfile = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     setIsSaving(true);
-    // Имитация сохранения (здесь можно добавить реальный запрос к API)
     setTimeout(() => {
       localStorage.setItem('userName', name);
       setIsSaving(false);

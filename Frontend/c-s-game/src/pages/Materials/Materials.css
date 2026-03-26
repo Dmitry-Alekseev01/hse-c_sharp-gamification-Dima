@@ -31,6 +31,13 @@
   margin-bottom: 40px;
 }
 
+@media (max-width: 992px) {
+  .materials-grid {
+    grid-template-columns: 1fr;
+    gap: 25px;
+  }
+}
+
 .material-card {
   background: white;
   border-radius: 12px;
@@ -40,6 +47,60 @@
   display: flex;
   flex-direction: column;
   min-height: fit-content;
+}
+
+.material-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  border-color: #667eea;
+}
+
+/* Шапка карточки */
+.material-header {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  min-height: 60px;
+}
+
+/* Ссылка, оборачивающая заголовок */
+.material-title-link {
+  flex: 1;
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  justify-content: center; /* центрируем содержимое по горизонтали */
+}
+
+/* Заголовок материала */
+.material-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+  line-height: 1.3;
+  max-height: 3.9em;
+  overflow: hidden;
+  text-align: center; /* дополнительно центрируем текст */
+}
+
+/* Отключаем подсветку при наведении */
+.material-title-link:hover .material-title {
+  color: #333; /* оставляем исходный цвет */
+  text-decoration: none;
+}
+
+.material-date {
+  background: #667eea;
+  color: white;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-left: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .material-content {
@@ -68,44 +129,6 @@
 
 .material-content::-webkit-scrollbar-thumb:hover {
   background: #764ba2;
-}
-
-.material-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-  border-color: #667eea;
-}
-
-.material-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 15px;
-  padding-bottom: 15px;
-  min-height: 60px;
-}
-
-.material-title {
-  font-size: 1.4rem;
-  font-weight: 600;
-  color: #333;
-  margin: 0;
-  flex: 1;
-  line-height: 1.3;
-  max-height: 3.9em;
-  overflow: hidden;
-}
-
-.material-date {
-  background: #667eea;
-  color: white;
-  padding: 5px 12px;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  margin-left: 10px;
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .material-content p {
@@ -211,17 +234,7 @@
   font-weight: 500;
 }
 
-@media (max-width: 992px) {
-  .materials-grid {
-    grid-template-columns: 1fr;
-    gap: 25px;
-  }
-
-  .material-card {
-    min-height: 300px;
-  }
-}
-
+/* Адаптивность */
 @media (max-width: 768px) {
   .materials-header h1 {
     font-size: 2rem;
@@ -241,6 +254,7 @@
   .material-title {
     max-height: none;
     font-size: 1.3rem;
+    text-align: center;
   }
 
   .material-content {
@@ -265,15 +279,4 @@
   .material-content {
     max-height: 180px;
   }
-}
-
-.material-title-link {
-  text-decoration: none;
-  color: inherit;
-  flex: 1;
-}
-
-.material-title-link:hover .material-title {
-  color: #667eea;
-  text-decoration: underline;
 }

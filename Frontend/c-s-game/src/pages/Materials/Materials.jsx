@@ -7,49 +7,51 @@ const Materials = () => {
     {
       id: 1,
       title: 'Введение в React.js',
+      description:
+        'React - это JavaScript-библиотека для создания пользовательских интерфейсов. Она позволяет создавать сложные UI из небольших и изолированных частей кода, называемых «компонентами». В этом материале рассматриваются основные концепции React.',
       docLink: 'https://reactjs.org/docs/getting-started.html',
       publicationDate: '2024-01-15',
-      content:
-        'React - это JavaScript-библиотека для создания пользовательских интерфейсов. Она позволяет создавать сложные UI из небольших и изолированных частей кода, называемых «компонентами». В этом материале рассмотрим основные концепции: JSX, компоненты, пропсы, состояние и жизненный цикл компонентов.',
       relatedTests: [
         { id: 1, name: 'Основы React.js' },
         { id: 2, name: 'Компоненты и пропсы' },
+        { id: 3, name: 'Состояние и жизненный цикл' },
       ],
     },
     {
       id: 2,
       title: 'JavaScript: современные возможности ES6+',
+      description:
+        'ES6 (ECMAScript 2015) принес множество новых возможностей в JavaScript. Рассмотрим ключевые нововведения: стрелочные функции, деструктуризация, операторы spread/rest, классы, промисы, async/await, модули и многое другое.',
       docLink: 'https://developer.mozilla.org/ru/docs/Web/JavaScript',
       publicationDate: '2024-01-20',
-      content:
-        'ES6 (ECMAScript 2015) принес множество новых возможностей в JavaScript. Рассмотрим ключевые нововведения: стрелочные функции, деструктуризация, операторы spread/rest, классы, промисы, async/await, модули. Эти возможности делают код более читаемым и эффективным.',
       relatedTests: [
-        { id: 3, name: 'ES6+ Syntax' },
-        { id: 4, name: 'Асинхронный JavaScript' },
+        { id: 5, name: 'ES6+ Syntax' },
+        { id: 6, name: 'Асинхронный JavaScript' },
+        { id: 7, name: 'Классы и наследование' },
       ],
     },
     {
       id: 3,
       title: 'Основы CSS Grid и Flexbox',
+      description:
+        'CSS Grid и Flexbox – современные технологии верстки, которые решают задачи создания адаптивных макетов. Материал содержит примеры и сравнение подходов.',
       docLink: null,
       publicationDate: '2024-02-01',
-      content:
-        'CSS Grid и Flexbox - современные технологии верстки, которые решают задачи создания адаптивных макетов. Flexbox идеально подходит для одномерных макетов (строка или колонка), а Grid - для двумерных. Рассмотрим основные свойства и примеры использования.',
       relatedTests: [
-        { id: 5, name: 'CSS Layout' },
-        { id: 6, name: 'Адаптивная верстка' },
+        { id: 8, name: 'CSS Layout' },
+        { id: 9, name: 'Адаптивная верстка' },
       ],
     },
     {
       id: 4,
       title: 'Основы Node.js и Express',
+      description:
+        'Node.js – среда выполнения JavaScript на стороне сервера, Express – минималистичный веб-фреймворк. В материале рассматривается создание простого сервера, маршрутизация, middleware и работа с базами данных.',
       docLink: 'https://nodejs.org/docs/latest/api/',
       publicationDate: '2024-02-10',
-      content:
-        'Node.js - среда выполнения JavaScript на стороне сервера. Express - минималистичный веб-фреймворк для Node.js. В этом материале рассмотрим создание REST API, работу с middleware, маршрутизацию и подключение к базам данных.',
       relatedTests: [
-        { id: 7, name: 'Node.js основы' },
-        { id: 8, name: 'REST API с Express' },
+        { id: 11, name: 'Node.js основы' },
+        { id: 12, name: 'REST API с Express' },
       ],
     },
   ]);
@@ -63,18 +65,11 @@ const Materials = () => {
     });
   };
 
-  const truncateText = (text, maxLength = 200) => {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-  };
-
   return (
     <div className="materials-page">
       <div className="materials-header">
-        <h1>Материалы для обучения</h1>
-        <p className="materials-subtitle">
-          Изучайте материалы и проверяйте знания с помощью тестов
-        </p>
+        <h1>Учебные материалы</h1>
+        <p className="materials-subtitle">Изучайте материалы и закрепляйте знания на практике</p>
       </div>
 
       <div className="materials-grid">
@@ -82,13 +77,13 @@ const Materials = () => {
           <div key={material.id} className="material-card">
             <div className="material-header">
               <Link to={`/materials/${material.id}`} className="material-title-link">
-                <h2 className="material-title">{material.title}</h2>
+                <h3 className="material-title">{material.title}</h3>
               </Link>
               <span className="material-date">{formatDate(material.publicationDate)}</span>
             </div>
 
             <div className="material-content">
-              <p>{truncateText(material.content, 200)}</p>
+              <p>{material.description}</p>
             </div>
 
             <div className="material-footer">
@@ -99,29 +94,21 @@ const Materials = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="doc-link"
-                    onClick={(e) => e.stopPropagation()}
                   >
                     Документация
                   </a>
                 )}
 
-                {material.relatedTests && material.relatedTests.length > 0 && (
-                  <div className="tests-section">
-                    <h4>Связанные тесты:</h4>
-                    <div className="tests-list">
-                      {material.relatedTests.map((test) => (
-                        <Link
-                          key={test.id}
-                          to={`/tests`}
-                          className="test-link"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {test.name}
-                        </Link>
-                      ))}
-                    </div>
+                <div className="tests-section">
+                  <h4>Связанные тесты:</h4>
+                  <div className="tests-list">
+                    {material.relatedTests.map((test) => (
+                      <Link key={test.id} to={`/tests/${test.id}`} className="test-link">
+                        {test.name}
+                      </Link>
+                    ))}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
@@ -131,13 +118,13 @@ const Materials = () => {
       <div className="materials-stats">
         <div className="stat-item">
           <div className="stat-number">{materials.length}</div>
-          <div className="stat-label">Материалов доступно</div>
+          <div className="stat-label">Всего материалов</div>
         </div>
         <div className="stat-item">
           <div className="stat-number">
-            {materials.reduce((acc, mat) => acc + (mat.relatedTests?.length || 0), 0)}
+            {materials.reduce((acc, m) => acc + m.relatedTests.length, 0)}
           </div>
-          <div className="stat-label">Тестов доступно</div>
+          <div className="stat-label">Всего тестов</div>
         </div>
         <div className="stat-item">
           <div className="stat-number">{materials.filter((m) => m.docLink).length}</div>

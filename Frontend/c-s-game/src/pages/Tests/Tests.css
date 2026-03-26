@@ -181,15 +181,17 @@
 }
 
 .test-content {
-  flex: 1;
-  margin-bottom: 25px;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin-bottom: 0;
 }
 
 .test-stats-details {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 15px;
-  margin-bottom: 25px;
   padding: 20px;
   background: #f8f9ff;
   border-radius: 10px;
@@ -197,7 +199,7 @@
 
 .stat-detail {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: baseline;
   padding: 5px 0;
   white-space: nowrap;
@@ -206,15 +208,13 @@
 .stat-label {
   color: #666;
   font-weight: 500;
-  margin-right: 10px;
+  margin-right: 8px;
 }
 
 .stat-value {
   color: #333;
   font-weight: 700;
   font-size: 1.1rem;
-  text-align: right;
-  flex-shrink: 0;
 }
 
 .score-percentage {
@@ -227,6 +227,7 @@
 .test-footer {
   margin-top: auto;
   padding-top: 20px;
+  flex-shrink: 0;
 }
 
 .test-actions {

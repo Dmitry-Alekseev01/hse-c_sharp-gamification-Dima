@@ -3,10 +3,8 @@ import { Link } from 'react-router-dom';
 import './PersonalAccount.css';
 
 const PersonalAccount = () => {
-  // Читаем имя из localStorage (если сохранено), иначе дефолтное
   const [userName] = useState(localStorage.getItem('userName') || 'Дмитрий Иванов');
 
-  // Остальные данные пока статичны
   const userData = {
     login: 'dmitry_ivanov',
     registrationDate: '2024-01-15',

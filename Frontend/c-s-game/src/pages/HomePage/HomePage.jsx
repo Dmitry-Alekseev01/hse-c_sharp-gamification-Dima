@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import './HomePage.css';
 
@@ -23,6 +23,7 @@ const Home = () => {
       deadline: '2024-02-28',
       tests: 3,
       materials: 5,
+      progress: 100,
     },
     {
       id: 2,
@@ -32,6 +33,7 @@ const Home = () => {
       deadline: '2024-03-05',
       tests: 4,
       materials: 8,
+      progress: 100,
     },
     {
       id: 3,
@@ -41,6 +43,7 @@ const Home = () => {
       deadline: '2024-03-15',
       tests: 5,
       materials: 10,
+      progress: 65,
     },
     {
       id: 4,
@@ -50,6 +53,7 @@ const Home = () => {
       deadline: '2024-03-25',
       tests: 4,
       materials: 7,
+      progress: 30,
     },
     {
       id: 5,
@@ -59,6 +63,7 @@ const Home = () => {
       deadline: '2024-04-10',
       tests: 6,
       materials: 12,
+      progress: 0,
     },
     {
       id: 6,
@@ -68,6 +73,7 @@ const Home = () => {
       deadline: '2024-04-25',
       tests: 5,
       materials: 9,
+      progress: 0,
     },
     {
       id: 7,
@@ -77,6 +83,7 @@ const Home = () => {
       deadline: '2024-05-10',
       tests: 3,
       materials: 6,
+      progress: 0,
     },
   ]);
 
@@ -141,12 +148,29 @@ const Home = () => {
   ]);
 
   const [activeTab, setActiveTab] = useState('roadmap');
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  const totalDeadlines = deadlines.length;
+  const overdueCount = deadlines.filter((d) => d.daysLeft < 0).length;
+  const todayCount = deadlines.filter((d) => d.daysLeft === 0).length;
+
+  const nextDeadline = deadlines
+    .filter((d) => d.daysLeft >= 0)
+    .reduce((prev, curr) => (curr.daysLeft < prev.daysLeft ? curr : prev), deadlines[0]);
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long',
+    });
+  };
+
+  const formatShortDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
     });
   };
 
@@ -163,6 +187,11 @@ const Home = () => {
     }
   };
 
+  const getFilteredDeadlines = () => {
+    if (activeFilter === 'all') return deadlines;
+    return deadlines.filter((item) => item.type === activeFilter);
+  };
+
   return (
     <div className="home-page">
       <div className="welcome-section">
@@ -173,7 +202,7 @@ const Home = () => {
           </p>
 
           <div className="stats-cards">
-            <div className="stat-card main">
+            <div className="stat-card">
               <div className="stat-info">
                 <div className="stat-value">{stats.streakDays} дней</div>
                 <div className="stat-label">Текущий стрик</div>
@@ -208,7 +237,7 @@ const Home = () => {
 
       {/* Стрик */}
       <div className="streak-section">
-        <h2 className="section-title">🔥 Текущий стрик: {stats.streakDays} дней</h2>
+        <h2 className="section-title">Текущий стрик: {stats.streakDays} дней</h2>
         <div className="streak-calendar">
           {streak.map((day, index) => (
             <div
@@ -223,7 +252,7 @@ const Home = () => {
         </div>
         <p className="streak-motivation">
           {stats.streakDays >= 7
-            ? 'Отличная работа! Продолжайте в том же духе! 🔥'
+            ? 'Отличная работа! Продолжайте в том же духе!'
             : 'Пройдите тест сегодня, чтобы продолжить стрик!'}
         </p>
       </div>
@@ -293,8 +322,9 @@ const Home = () => {
 
                     <div className="progress-container">
                       <div className="progress-bar">
-                        <div className="progress-fill" style={{ width: `${item.progress}` }}></div>
+                        <div className="progress-fill" style={{ width: `${item.progress}%` }}></div>
                       </div>
+                      <span className="progress-text">{item.progress}%</span>
                     </div>
 
                     <div className="roadmap-actions">
@@ -321,62 +351,72 @@ const Home = () => {
           <div className="deadlines-section">
             <h2 className="section-title">Ближайшие дедлайны</h2>
 
-            <div className="deadlines-filters">
-              <button className="filter-btn active">Все</button>
-              <button className="filter-btn">Тесты</button>
-              <button className="filter-btn">Задания</button>
-              <button className="filter-btn">Проекты</button>
+            <div className="deadline-stats">
+              <div className="stat-big-card">
+                <span className="stat-big-value">{totalDeadlines}</span>
+                <span className="stat-big-label">Всего заданий</span>
+              </div>
+              <div className="stat-big-card overdue">
+                <span className="stat-big-value">{overdueCount}</span>
+                <span className="stat-big-label">Просрочено</span>
+              </div>
+              <div className="stat-big-card today">
+                <span className="stat-big-value">{todayCount}</span>
+                <span className="stat-big-label">На сегодня</span>
+              </div>
             </div>
 
-            <div className="deadlines-list">
-              {deadlines.map((item) => (
-                <div key={item.id} className="deadline-card">
-                  <div className="deadline-header">
-                    <div className="deadline-type">
-                      <span className="type-name">
-                        {item.type === 'test'
-                          ? 'Тест'
-                          : item.type === 'practice'
-                            ? 'Задание'
-                            : 'Проект'}
-                      </span>
-                    </div>
-                    <div className={`deadline-priority ${getPriorityClass(item.priority)}`}>
-                      {item.priority === 'high'
-                        ? 'Высокий'
-                        : item.priority === 'medium'
-                          ? 'Средний'
-                          : 'Низкий'}{' '}
-                      приоритет
-                    </div>
-                  </div>
+            {nextDeadline && (
+              <div className="deadline-timer">
+                <span className="timer-label">Ближайший дедлайн</span>
+                <span className="timer-value">
+                  {nextDeadline.title} — {nextDeadline.daysLeft} дн.
+                </span>
+              </div>
+            )}
 
-                  <h3 className="deadline-title">{item.title}</h3>
+            <div className="deadlines-filters">
+              <button
+                className={`filter-btn ${activeFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setActiveFilter('all')}
+              >
+                Все
+              </button>
+              <button
+                className={`filter-btn ${activeFilter === 'test' ? 'active' : ''}`}
+                onClick={() => setActiveFilter('test')}
+              >
+                Тесты
+              </button>
+              <button
+                className={`filter-btn ${activeFilter === 'practice' ? 'active' : ''}`}
+                onClick={() => setActiveFilter('practice')}
+              >
+                Задания
+              </button>
+              <button
+                className={`filter-btn ${activeFilter === 'project' ? 'active' : ''}`}
+                onClick={() => setActiveFilter('project')}
+              >
+                Проекты
+              </button>
+            </div>
 
-                  <div className="deadline-info">
-                    <div className="info-item">
-                      <span className="info-label">Срок сдачи:</span>
-                      <span className="info-value">{formatDate(item.deadline)}</span>
-                    </div>
-
-                    <div className="info-item">
-                      <span className="info-label">Осталось дней:</span>
-                      <span className={`info-value ${item.daysLeft <= 3 ? 'urgent' : ''}`}>
+            <div className="deadlines-horizontal">
+              {getFilteredDeadlines().map((item) => (
+                <div
+                  key={item.id}
+                  className={`deadline-item-horizontal ${getPriorityClass(item.priority)}`}
+                >
+                  <div className="deadline-info-horizontal">
+                    <div className="deadline-title-horizontal">{item.title}</div>
+                    <div className="deadline-meta-horizontal">
+                      <span className="deadline-date">{formatShortDate(item.deadline)}</span>
+                      <span className={`deadline-days-left ${item.daysLeft <= 3 ? 'urgent' : ''}`}>
                         {item.daysLeft}{' '}
                         {item.daysLeft === 1 ? 'день' : item.daysLeft <= 4 ? 'дня' : 'дней'}
                       </span>
                     </div>
-                  </div>
-
-                  <div className="deadline-actions">
-                    <Link to="/tests" className="action-btn primary-btn">
-                      {item.type === 'test'
-                        ? 'Пройти тест'
-                        : item.type === 'practice'
-                          ? 'Выполнить'
-                          : 'Открыть проект'}
-                    </Link>
-                    <button className="action-btn secondary-btn">Напомнить позже</button>
                   </div>
                 </div>
               ))}
@@ -550,7 +590,6 @@ const Home = () => {
               <h3>Продолжить тест</h3>
               <p>React.js основы - 65% пройдено</p>
             </div>
-            {/* <div className="action-arrow">→</div> */}
           </Link>
 
           <Link to="/materials" className="action-card">
@@ -558,7 +597,6 @@ const Home = () => {
               <h3>Новые материалы</h3>
               <p>3 новых урока доступны</p>
             </div>
-            {/* <div className="action-arrow">→</div> */}
           </Link>
 
           <div className="action-card">
@@ -566,7 +604,6 @@ const Home = () => {
               <h3>Цель дня</h3>
               <p>Пройти 1 тест для сохранения стрика</p>
             </div>
-            {/* <div className="action-check">✓</div> */}
           </div>
 
           <div className="action-card">
@@ -574,7 +611,6 @@ const Home = () => {
               <h3>Аналитика</h3>
               <p>Посмотреть ваш прогресс за неделю</p>
             </div>
-            {/* <div className="action-arrow">→</div> */}
           </div>
         </div>
       </div>

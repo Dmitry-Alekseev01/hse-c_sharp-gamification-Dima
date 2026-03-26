@@ -14,8 +14,8 @@ import Login from '../pages/Authorisation/Login';
 import Register from '../pages/Authorisation/Register';
 import ForgotPassword from '../pages/Authorisation/ForgotPassword';
 import ResetPassword from '../pages/Authorisation/ResetPassword';
-import ChangePassword from '../components/ChangePassword/ChangePassword'; // страница смены пароля (заглушка)
-import EditProfile from '../components/EditProfile/EditProfile'; // страница редактирования профиля
+import ChangePassword from '../components/ChangePassword/ChangePassword';
+import EditProfile from '../components/EditProfile/EditProfile';
 
 import {
   MAIN_ROUTE,
@@ -35,7 +35,6 @@ import {
   EDIT_PROFILE_ROUTE,
 } from './const.js';
 
-// Проверка авторизации (используем localStorage)
 const isAuthenticated = () => localStorage.getItem('isAuthenticated') === 'true';
 
 const ProtectedRoute = ({ children }) => {
