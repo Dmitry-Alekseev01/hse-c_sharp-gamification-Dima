@@ -13,7 +13,7 @@ const Analytics = () => {
     totalTests: 12,
     averageScore: 85,
     studyTime: '48ч 30м',
-    lastActive: 'сегодня, 14:30'
+    lastActive: 'сегодня, 14:30',
   };
 
   const progressData = [
@@ -35,11 +35,8 @@ const Analytics = () => {
 
   const renderProgressBar = (percentage) => (
     <div className="progress-bar">
-      <div 
-        className="progress-fill" 
-        style={{ width: `${percentage}%` }}
-      />
-      <span className="progress-text">{percentage}%</span>
+      <div className="progress-fill" style={{ width: `${percentage}%` }} />
+      {/* <span className="progress-text">{percentage}%</span> */}
     </div>
   );
 
@@ -58,19 +55,19 @@ const Analytics = () => {
       </div>
 
       <div className="analytics-tabs">
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'progress' ? 'active' : ''}`}
           onClick={() => setActiveTab('progress')}
         >
           Прогресс
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'tests' ? 'active' : ''}`}
           onClick={() => setActiveTab('tests')}
         >
           Тесты
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'time' ? 'active' : ''}`}
           onClick={() => setActiveTab('time')}
         >
@@ -90,7 +87,9 @@ const Analytics = () => {
                 <span className="stat-divider">/</span>
                 <span className="stat-total">{learningData.totalMaterials}</span>
               </div>
-              {renderProgressBar((learningData.materialsStudied / learningData.totalMaterials) * 100)}
+              {renderProgressBar(
+                (learningData.materialsStudied / learningData.totalMaterials) * 100
+              )}
             </div>
 
             <div className="stat-card">
@@ -114,15 +113,12 @@ const Analytics = () => {
               </div>
               <div className="score-indicator">
                 <div className="score-bar">
-                  <div 
-                    className="score-fill" 
-                    style={{ width: `${learningData.averageScore}%` }}
-                  />
+                  <div className="score-fill" style={{ width: `${learningData.averageScore}%` }} />
                 </div>
                 <div className="score-labels">
-                  <span>0</span>
+                  {/* <span>0</span>
                   <span>50</span>
-                  <span>100</span>
+                  <span>100</span> */}
                 </div>
               </div>
             </div>
@@ -135,10 +131,7 @@ const Analytics = () => {
                 <div key={item.week} className="chart-bar-container">
                   <div className="chart-bar-label">{item.week}</div>
                   <div className="chart-bar-wrapper">
-                    <div 
-                      className="chart-bar" 
-                      style={{ height: `${item.progress}%` }}
-                    />
+                    <div className="chart-bar" style={{ height: `${item.progress}%` }} />
                   </div>
                   <div className="chart-bar-value">{item.progress}%</div>
                 </div>
@@ -188,7 +181,7 @@ const Analytics = () => {
                 <div className="time-stat-label">Общее время обучения</div>
               </div>
             </div>
-            
+
             <div className="time-stat-card">
               <div className="time-stat-info">
                 <div className="time-stat-value">{learningData.lastActive}</div>
@@ -220,15 +213,6 @@ const Analytics = () => {
           </div>
         </div>
       )}
-
-      <div className="analytics-footer">
-        <button className="export-btn" onClick={() => alert('Экспорт данных...')}>
-          Экспорт данных в PDF
-        </button>
-        <button className="share-btn" onClick={() => alert('Поделиться...')}>
-          Поделиться результатами
-        </button>
-      </div>
     </div>
   );
 };

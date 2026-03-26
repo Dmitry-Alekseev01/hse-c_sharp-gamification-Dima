@@ -38,7 +38,7 @@
 }
 
 .analytics-header h1 {
-  font-size: 2.5rem;
+  font-size: 2.2rem;
   color: #333;
   margin-bottom: 10px;
   font-weight: 700;
@@ -46,14 +46,14 @@
 
 .analytics-subtitle {
   color: #666;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   margin-top: 0;
 }
 
 .analytics-tabs {
   display: flex;
   justify-content: center;
-  gap: 10px;
+  gap: 15px;
   margin-bottom: 40px;
   border-bottom: 2px solid #f0f0f0;
   padding-bottom: 15px;
@@ -92,69 +92,71 @@
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 30px;
+  gap: 25px;
   margin-bottom: 50px;
 }
 
 .stat-card {
   background: #f8f9ff;
   border-radius: 16px;
-  padding: 30px;
-  border: 2px solid #e0e7ff;
+  padding: 25px;
+  border: 1px solid #e0e7ff;
   transition: all 0.3s ease;
 }
 
 .stat-card:hover {
   border-color: #667eea;
-  transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.15);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.1);
 }
 
 .stat-header {
   display: flex;
   align-items: center;
-  gap: 15px;
-  margin-bottom: 25px;
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
 .stat-icon {
-  font-size: 2rem;
+  font-size: 1.8rem;
+  color: #667eea;
 }
 
 .stat-header h3 {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   color: #333;
   margin: 0;
+  font-weight: 600;
 }
 
 .stat-numbers {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 20px;
 }
 
 .stat-current {
-  font-size: 3rem;
+  font-size: 2.2rem;
   font-weight: 700;
-  color: #667eea;
+  color: #333;
 }
 
 .stat-divider {
-  font-size: 2.5rem;
-  color: #999;
+  font-size: 2.2rem;
+  color: #333;
 }
 
 .stat-total {
   font-size: 2.2rem;
-  color: #666;
+  color: #333;
 }
 
 .stat-score {
   font-size: 3rem;
   font-weight: 700;
-  color: #667eea;
+  color: #333;
   text-align: center;
   display: block;
 }
@@ -183,21 +185,6 @@
   transition: width 0.5s ease;
 }
 
-.progress-text {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: white;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
 .score-indicator {
   margin-top: 30px;
 }
@@ -224,10 +211,11 @@
   color: #666;
 }
 
+/* ===== ИСПРАВЛЕННЫЙ БЛОК ГРАФИКА ПРОГРЕССА ===== */
 .progress-chart {
   background: #f8f9ff;
   border-radius: 16px;
-  padding: 30px;
+  padding: 30px 20px;
   border: 2px solid #e0e7ff;
 }
 
@@ -242,25 +230,28 @@
   display: flex;
   justify-content: space-around;
   align-items: flex-end;
-  height: 250px;
-  padding: 30px 0;
+  gap: 25px;
+  min-height: 320px;
+  padding: 20px 0 40px 0;
 }
 
 .chart-bar-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
+  gap: 12px;
   flex: 1;
 }
 
 .chart-bar-label {
-  font-size: 1rem;
+  font-size: 0.9rem;
   color: #666;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   text-align: center;
-  height: 100px;
+  height: 70px;
+  line-height: 1.2;
+  margin-bottom: 5px;
 }
 
 .chart-bar-wrapper {
@@ -272,11 +263,10 @@
 }
 
 .chart-bar {
-  width: 50px;
+  width: 45px;
   background: linear-gradient(to top, #667eea, #764ba2);
-  border-radius: 8px 8px 0 0;
+  border-radius: 6px 6px 0 0;
   transition: height 0.5s ease;
-  max-width: 80%;
 }
 
 .chart-bar-value {
@@ -284,8 +274,10 @@
   font-weight: 600;
   color: #333;
   margin-top: 10px;
+  text-align: center;
 }
 
+/* ===== ОСТАЛЬНЫЕ СТИЛИ ===== */
 .test-results-table {
   background: #f8f9ff;
   border-radius: 16px;
@@ -443,7 +435,8 @@
   border-top: 2px solid #f0f0f0;
 }
 
-.export-btn, .share-btn {
+.export-btn,
+.share-btn {
   padding: 16px 32px;
   border-radius: 10px;
   font-size: 1.1rem;
@@ -482,19 +475,25 @@
   .analytics-page {
     padding: 30px;
   }
-  
+
   .stats-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .chart-bars {
-    height: 200px;
+    gap: 15px;
+    min-height: 280px;
   }
-  
+
   .chart-bar {
-    width: 40px;
+    width: 35px;
   }
-  
+
+  .chart-bar-label {
+    height: 60px;
+    font-size: 0.8rem;
+  }
+
   .time-stats {
     grid-template-columns: 1fr;
   }
@@ -504,7 +503,7 @@
   .analytics-header {
     padding-top: 60px;
   }
-  
+
   .back-button {
     position: relative;
     top: 0;
@@ -514,35 +513,52 @@
     width: 100%;
     justify-content: center;
   }
-  
+
   .analytics-header h1 {
     font-size: 2rem;
   }
-  
+
   .analytics-tabs {
     flex-direction: column;
   }
-  
+
   .tab-btn {
     width: 100%;
     justify-content: center;
   }
-  
+
+  .chart-bars {
+    gap: 10px;
+    min-height: 250px;
+    padding-bottom: 30px;
+  }
+
   .chart-bar {
     width: 30px;
   }
-  
+
+  .chart-bar-label {
+    height: 50px;
+    font-size: 0.75rem;
+  }
+
+  .chart-bar-value {
+    font-size: 0.9rem;
+    margin-top: 8px;
+  }
+
   .distribution-item {
     flex-direction: column;
     gap: 15px;
     align-items: flex-start;
   }
-  
+
   .analytics-footer {
     flex-direction: column;
   }
-  
-  .export-btn, .share-btn {
+
+  .export-btn,
+  .share-btn {
     width: 100%;
     justify-content: center;
   }
@@ -552,19 +568,19 @@
   .analytics-page {
     padding: 20px;
   }
-  
+
   .stat-card {
     padding: 20px;
   }
-  
+
   .chart-bar {
     width: 25px;
   }
-  
+
   .test-results-table {
     overflow-x: auto;
   }
-  
+
   .test-results-table table {
     min-width: 600px;
   }
