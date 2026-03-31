@@ -4,13 +4,31 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.cache.redis_cache import LEADERBOARD_TTL, cache_key_leaderboard_page, get, set
 from app.core.security import get_current_user, require_roles
-from app.schemas.analytics import AnalyticsRead, TestSummary
+from app.schemas.analytics import (
+    AnalyticsOverviewRead,
+    AnalyticsRead,
+    GroupAnalyticsSummaryRead,
+    ScoreBucketRead,
+    TestSummary,
+    UserPerformanceRead,
+)
 from app.schemas.level import LevelRead
-from app.repositories import analytics_repo, level_repo, test_repo
+from app.repositories import analytics_repo, group_repo, level_repo, test_repo
 from app.models.user import User
 
 router = APIRouter()
+
+
+def _assert_group_access(current_user: User, group) -> None:
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    if current_user.role == "admin":
+        return
+    if current_user.role == "teacher" and group.teacher_id == current_user.id:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
 
 @router.get("/user/{user_id}", response_model=AnalyticsRead, status_code=status.HTTP_200_OK)
@@ -41,8 +59,22 @@ async def leaderboard(
     """
     Leaderboard by total_points (descending). Returns list of {id, username, total_points}
     """
+    cache_key = cache_key_leaderboard_page(limit=limit, offset=offset)
+    cached = await get(cache_key)
+    if cached is not None:
+        return cached
+
     lb = await analytics_repo.get_leaderboard(db, limit=limit, offset=offset)
+    await set(cache_key, lb, ttl=LEADERBOARD_TTL)
     return lb
+
+
+@router.get("/overview", response_model=AnalyticsOverviewRead, status_code=status.HTTP_200_OK)
+async def analytics_overview(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("teacher", "admin")),
+):
+    return await analytics_repo.analytics_overview(db)
 
 
 @router.get("/levels", response_model=List[LevelRead], status_code=status.HTTP_200_OK)
@@ -136,6 +168,51 @@ async def completed_summary_test(
         "avg_score": summary["avg_score"],
         "avg_time_seconds": summary["avg_time_seconds"],
     }
+
+
+@router.get("/test/{test_id}/score-distribution", response_model=List[ScoreBucketRead], status_code=status.HTTP_200_OK)
+async def score_distribution_test(
+    test_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("teacher", "admin")),
+):
+    return await analytics_repo.test_score_distribution(db, test_id)
+
+
+@router.get("/user/{user_id}/performance", response_model=UserPerformanceRead, status_code=status.HTTP_200_OK)
+async def user_performance(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.id != user_id and current_user.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    performance = await analytics_repo.user_performance(db, user_id)
+    if performance is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return performance
+
+
+@router.get("/group/{group_id}/summary", response_model=GroupAnalyticsSummaryRead, status_code=status.HTTP_200_OK)
+async def group_summary(
+    group_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("teacher", "admin")),
+):
+    group = await group_repo.get_group(db, group_id)
+    _assert_group_access(current_user, group)
+    return await analytics_repo.group_summary(db, group_id)
+
+
+@router.get("/group/{group_id}/members", response_model=List[UserPerformanceRead], status_code=status.HTTP_200_OK)
+async def group_members_performance(
+    group_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("teacher", "admin")),
+):
+    group = await group_repo.get_group(db, group_id)
+    _assert_group_access(current_user, group)
+    return await analytics_repo.group_member_performance(db, group_id)
 
 
 @router.get("/dau", status_code=status.HTTP_200_OK)

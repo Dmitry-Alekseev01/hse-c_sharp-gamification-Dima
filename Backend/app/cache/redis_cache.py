@@ -7,6 +7,15 @@ from app.core.config import settings
 
 _redis: Optional[aioredis.Redis] = None
 
+MATERIALS_LIST_TTL = 300
+MATERIAL_DETAIL_TTL = 600
+TESTS_LIST_TTL = 120
+TEST_DETAIL_TTL = 300
+TEST_SUMMARY_TTL = 60
+LEADERBOARD_TTL = 30
+QUESTION_LIST_TTL = 120
+TEST_CONTENT_TTL = 120
+
 def get_redis_client() -> aioredis.Redis:
     global _redis
     if _redis is None:
@@ -77,6 +86,34 @@ def cache_key_leaderboard(prefix: str = "leaderboard:top", n: int = 100) -> str:
 
 def cache_key_test_summary(test_id: int) -> str:
     return f"test:{test_id}:summary"
+
+
+def cache_key_material_list(limit: int, offset: int) -> str:
+    return f"materials:list:{limit}:{offset}"
+
+
+def cache_key_material_detail(material_id: int) -> str:
+    return f"materials:detail:{material_id}"
+
+
+def cache_key_test_list(published_only: bool, limit: int) -> str:
+    return f"tests:list:{int(published_only)}:{limit}"
+
+
+def cache_key_test_detail(test_id: int) -> str:
+    return f"tests:detail:{test_id}"
+
+
+def cache_key_leaderboard_page(limit: int, offset: int) -> str:
+    return f"leaderboard:top:{limit}:{offset}"
+
+
+def cache_key_question_list(test_id: int, limit: int, offset: int) -> str:
+    return f"questions:test:{test_id}:{limit}:{offset}"
+
+
+def cache_key_test_content(test_id: int) -> str:
+    return f"tests:content:{test_id}"
 
 @asynccontextmanager
 async def redis_lock(name: str, timeout: int = 10):

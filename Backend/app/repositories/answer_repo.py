@@ -26,6 +26,65 @@ async def record_answer(session, user_id: int, test_id: int, question_id: int, p
     return a
 
 
+async def get_existing_answer(
+    session,
+    *,
+    user_id: int,
+    test_id: int,
+    question_id: int,
+    attempt_id: int | None,
+) -> Answer | None:
+    stmt = select(Answer).where(
+        Answer.user_id == user_id,
+        Answer.test_id == test_id,
+        Answer.question_id == question_id,
+    )
+    if attempt_id is None:
+        stmt = stmt.where(Answer.attempt_id.is_(None))
+    else:
+        stmt = stmt.where(Answer.attempt_id == attempt_id)
+
+    res = await session.execute(stmt.limit(1))
+    return res.scalars().first()
+
+
+async def upsert_answer(
+    session,
+    *,
+    user_id: int,
+    test_id: int,
+    question_id: int,
+    payload: str,
+    attempt_id: int | None = None,
+) -> tuple[Answer, float]:
+    existing = await get_existing_answer(
+        session,
+        user_id=user_id,
+        test_id=test_id,
+        question_id=question_id,
+        attempt_id=attempt_id,
+    )
+    if existing is None:
+        answer = await record_answer(
+            session,
+            user_id=user_id,
+            test_id=test_id,
+            question_id=question_id,
+            payload=payload,
+            attempt_id=attempt_id,
+        )
+        return answer, 0.0
+
+    previous_score = float(existing.score or 0.0)
+    existing.answer_payload = payload
+    existing.score = None
+    existing.graded_by = None
+    existing.graded_at = None
+    await session.flush()
+    await session.refresh(existing)
+    return existing, previous_score
+
+
 async def grade_mcq_answer(session, answer_id: int) -> Optional[Answer]:
     """
     Auto-grade answer with MCQ: parses answer.answer_payload as int(choice_id),
@@ -54,7 +113,7 @@ async def grade_mcq_answer(session, answer_id: int) -> Optional[Answer]:
     stmt = (
         select(Choice, Question)
         .join(Question, Choice.question_id == Question.id)
-        .where(Choice.id == choice_id)
+        .where(Choice.id == choice_id, Question.id == answer.question_id)
     )
 
     res = await session.execute(stmt)

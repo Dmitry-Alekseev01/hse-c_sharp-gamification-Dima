@@ -10,6 +10,7 @@ import asyncio
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
@@ -18,11 +19,21 @@ from app.health.endpoints import router as health_router
 from app.api.v1.routers import users, materials, tests, answers, choices, levels, questions, analytics, auth, groups 
 from app.db.session import engine, Base
 from app.cache.redis_client import redis_client
+from app.middleware.rate_limit import RateLimitMiddleware
 logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="HSE Gamification Backend (dev)")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.get_cors_origins(),
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.add_middleware(RateLimitMiddleware)
 
     app.include_router(health_router, prefix="/health", tags=["health"])
     app.include_router(users.router, prefix="/api/v1/users", tags=["users"])

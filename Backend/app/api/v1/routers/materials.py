@@ -4,6 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.cache.redis_cache import (
+    MATERIALS_LIST_TTL,
+    MATERIAL_DETAIL_TTL,
+    cache_key_material_detail,
+    cache_key_material_list,
+    delete_pattern,
+    get,
+    set,
+)
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.schemas.material import MaterialCreate, MaterialRead, MaterialUpdate
@@ -19,10 +28,14 @@ async def list_materials(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """
-    List published materials (or all, depending on repo implementation).
-    """
+    cache_key = cache_key_material_list(limit=limit, offset=offset)
+    cached = await get(cache_key)
+    if cached is not None:
+        return cached
+
     items = await material_repo.list_materials(db, limit=limit, offset=offset)
+    payload = [MaterialRead.model_validate(item).model_dump(mode="json") for item in items]
+    await set(cache_key, payload, ttl=MATERIALS_LIST_TTL)
     return items
 
 
@@ -32,12 +45,16 @@ async def get_material(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """
-    Get a single material by id.
-    """
+    cache_key = cache_key_material_detail(material_id)
+    cached = await get(cache_key)
+    if cached is not None:
+        return cached
+
     m = await material_repo.get_material(db, material_id)
     if not m:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+    payload = MaterialRead.model_validate(m).model_dump(mode="json")
+    await set(cache_key, payload, ttl=MATERIAL_DETAIL_TTL)
     return m
 
 
@@ -63,6 +80,10 @@ async def create_material(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    await delete_pattern("materials:*")
+    await delete_pattern("tests:list:*")
+    await delete_pattern("tests:detail:*")
+    await delete_pattern("tests:content:*")
     return m
 
 
@@ -76,6 +97,10 @@ async def update_material(
     material = await material_repo.update_material(db, material_id, **payload.model_dump(exclude_unset=True))
     if material is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+    await delete_pattern("materials:*")
+    await delete_pattern("tests:list:*")
+    await delete_pattern("tests:detail:*")
+    await delete_pattern("tests:content:*")
     return material
 
 
@@ -88,4 +113,8 @@ async def delete_material(
     deleted = await material_repo.delete_material(db, material_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
+    await delete_pattern("materials:*")
+    await delete_pattern("tests:list:*")
+    await delete_pattern("tests:detail:*")
+    await delete_pattern("tests:content:*")
     return {}

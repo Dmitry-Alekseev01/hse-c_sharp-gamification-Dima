@@ -12,9 +12,12 @@ class ChoiceRead(BaseModel):
     question_id: int
     value: str
     ordinal: int | None
-    is_correct: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ChoiceTeacherRead(ChoiceRead):
+    is_correct: bool
 
 class QuestionCreate(BaseModel):
     test_id: int
@@ -32,5 +35,17 @@ class QuestionRead(BaseModel):
     is_open_answer: bool
     material_urls: List[str] | None = None
     choices: List[ChoiceRead] | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QuestionTeacherRead(BaseModel):
+    id: int
+    test_id: int
+    text: str
+    points: float
+    is_open_answer: bool
+    material_urls: List[str] | None = None
+    choices: List[ChoiceTeacherRead] | None = None
 
     model_config = ConfigDict(from_attributes=True)

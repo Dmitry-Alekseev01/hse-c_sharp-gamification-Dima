@@ -38,3 +38,44 @@ class QuestionStats(BaseModel):
     distinct_users: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AnalyticsOverviewRead(BaseModel):
+    total_users: int
+    total_materials: int
+    total_tests: int
+    published_tests: int
+    total_questions: int
+    total_answers: int
+    completed_attempts: int
+    pending_open_answers: int
+    active_users_7d: int
+
+
+class UserPerformanceRead(BaseModel):
+    user_id: int
+    username: str
+    full_name: str | None
+    total_points: float
+    tests_taken: int
+    completed_attempts: int
+    avg_score: float | None
+    avg_time_seconds: float | None
+    last_active: datetime | None
+
+
+class GroupAnalyticsSummaryRead(BaseModel):
+    group_id: int
+    members_count: int
+    active_members_7d: int
+    total_points: float
+    avg_points: float | None
+    completed_attempts: int
+    avg_completed_attempts: float | None
+    avg_score: float | None
+    avg_time_seconds: float | None
+
+
+class ScoreBucketRead(BaseModel):
+    label: str
+    count: int
