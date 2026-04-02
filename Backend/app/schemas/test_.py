@@ -37,5 +37,6 @@ class TestRead(BaseModel):
     material_id: int | None
     material_ids: List[int]
     deadline: datetime | None
+    author_id: int | None
 
     model_config = ConfigDict(from_attributes=True)

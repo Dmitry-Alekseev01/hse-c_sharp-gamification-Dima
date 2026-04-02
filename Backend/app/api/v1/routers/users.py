@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.security import get_current_user, require_roles
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import AdminUserCreate, UserRead, UserRoleUpdate
 from app.services import user_service
 from app.repositories import user_repo
 from app.models.user import User as UserModel
@@ -15,7 +15,7 @@ router = APIRouter()
 
 @router.post("/", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def create_user(
-    payload: UserCreate,
+    payload: AdminUserCreate,
     db: AsyncSession = Depends(get_db),
     _: UserModel = Depends(require_roles("admin")),
 ):
@@ -24,7 +24,13 @@ async def create_user(
     Uses user_service.register_user which should validate uniqueness, hash password, etc.
     """
     try:
-        user = await user_service.register_user(db, payload.username, payload.password, payload.full_name)
+        user = await user_service.register_user(
+            db,
+            payload.username,
+            payload.password,
+            payload.full_name,
+            role=payload.role,
+        )
     except ValueError as e:
         # service may raise ValueError for validation (e.g. username exists)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -58,6 +64,22 @@ async def get_user(
     user = await db.get(UserModel, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if current_user.id != user_id and current_user.role not in {"teacher", "admin"}:
+    if current_user.id != user_id and current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return user
+
+
+@router.patch("/{user_id}/role", response_model=UserRead, status_code=status.HTTP_200_OK)
+async def update_user_role(
+    user_id: int,
+    payload: UserRoleUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: UserModel = Depends(require_roles("admin")),
+):
+    user = await user_repo.get_user_by_id(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user.role = payload.role
+    await db.flush()
+    await db.refresh(user)
     return user

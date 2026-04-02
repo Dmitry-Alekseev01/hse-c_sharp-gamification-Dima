@@ -43,6 +43,21 @@ class Settings(BaseSettings):
     redis_url: str = Field("redis://redis:6379/0", env="REDIS_URL")
     redis_port: int = Field(6379, env="REDIS_PORT")
 
+    # CORS
+    cors_allow_origins: str = Field(
+        "http://localhost:3002,http://127.0.0.1:3002,http://localhost:8080,http://127.0.0.1:8080",
+        env="CORS_ALLOW_ORIGINS",
+    )
+    cors_allow_credentials: bool = Field(True, env="CORS_ALLOW_CREDENTIALS")
+
+    # Rate limiting
+    rate_limit_enabled: bool = Field(True, env="RATE_LIMIT_ENABLED")
+    rate_limit_window_seconds: int = Field(60, env="RATE_LIMIT_WINDOW_SECONDS")
+    rate_limit_default: int = Field(300, env="RATE_LIMIT_DEFAULT")
+    rate_limit_auth: int = Field(20, env="RATE_LIMIT_AUTH")
+    rate_limit_answers: int = Field(180, env="RATE_LIMIT_ANSWERS")
+    rate_limit_analytics: int = Field(120, env="RATE_LIMIT_ANALYTICS")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -62,6 +77,9 @@ class Settings(BaseSettings):
         port = self.postgres_port
         db = self.postgres_db
         return f"postgresql+asyncpg://{user}:{pw}@{host}:{port}/{db}"
+
+    def get_cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
 
 
 settings = Settings()

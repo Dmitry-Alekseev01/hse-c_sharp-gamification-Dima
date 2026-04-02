@@ -37,6 +37,12 @@ class User(Base):
         lazy="selectin",
     )
 
+    tests_authored = relationship(
+        "Test",
+        back_populates="author",
+        lazy="selectin",
+    )
+
     # analytics (one-to-one)
     analytics = relationship(
         "Analytics",

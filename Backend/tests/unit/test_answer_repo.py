@@ -111,3 +111,31 @@ async def test_get_pending_open_answers_returns_only_ungraded_open_answers(sessi
     pending = await get_pending_open_answers(session)
 
     assert [answer.id for answer in pending] == [pending_answer.id]
+
+
+@pytest.mark.asyncio
+async def test_get_pending_open_answers_can_filter_by_test_author(session):
+    teacher_a = User(username="pending_teacher_a", password_hash="x", role="teacher")
+    teacher_b = User(username="pending_teacher_b", password_hash="x", role="teacher")
+    student = User(username="pending_student", password_hash="x", role="user")
+    session.add_all([teacher_a, teacher_b, student])
+    await session.flush()
+
+    test_a = TestModel(title="Teacher A test", author_id=teacher_a.id)
+    test_b = TestModel(title="Teacher B test", author_id=teacher_b.id)
+    session.add_all([test_a, test_b])
+    await session.flush()
+
+    question_a = Question(test_id=test_a.id, text="Open A", points=5.0, is_open_answer=True)
+    question_b = Question(test_id=test_b.id, text="Open B", points=5.0, is_open_answer=True)
+    session.add_all([question_a, question_b])
+    await session.flush()
+
+    answer_a = Answer(user_id=student.id, test_id=test_a.id, question_id=question_a.id, answer_payload="A")
+    answer_b = Answer(user_id=student.id, test_id=test_b.id, question_id=question_b.id, answer_payload="B")
+    session.add_all([answer_a, answer_b])
+    await session.flush()
+
+    pending = await get_pending_open_answers(session, author_id=teacher_a.id)
+
+    assert [answer.id for answer in pending] == [answer_a.id]

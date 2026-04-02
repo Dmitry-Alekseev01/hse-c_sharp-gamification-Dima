@@ -12,10 +12,17 @@ async def get_test(session, test_id: int):
     res = await session.execute(q)
     return res.scalars().first()
 
-async def list_tests(session, published_only: bool = True, limit: int = 100):
+async def list_tests(
+    session,
+    published_only: bool = True,
+    limit: int = 100,
+    author_id: int | None = None,
+):
     q = select(Test).options(selectinload(Test.materials))
     if published_only:
         q = q.where(Test.published == True)
+    if author_id is not None:
+        q = q.where(Test.author_id == author_id)
     q = q.limit(limit)
     res = await session.execute(q)
     return res.scalars().all()
@@ -30,6 +37,7 @@ async def create_test(
     material_id: int | None = None,
     material_ids: list[int] | None = None,
     deadline=None,
+    author_id: int | None = None,
 ):
     test = Test(
         title=title,
@@ -39,6 +47,7 @@ async def create_test(
         published=published,
         material_id=material_id,
         deadline=deadline,
+        author_id=author_id,
     )
     session.add(test)
     await session.flush()

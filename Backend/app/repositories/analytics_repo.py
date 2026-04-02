@@ -7,6 +7,10 @@ from app.models.user import User
 from app.models.answer import Answer
 from app.models.level import Level
 from app.models.test_attempt import TestAttempt
+from app.models.material import Material
+from app.models.test_ import Test
+from app.models.question import Question
+from app.models.group import GroupMembership
 
 
 async def get_analytics_for_user(session: AsyncSession, user_id: int) -> Optional[Analytics]:
@@ -19,7 +23,8 @@ async def create_or_update_analytics(
     session: AsyncSession,
     user_id: int,
     points_delta: float = 0.0,
-    mark_active: bool = False
+    mark_active: bool = False,
+    tests_delta: int = 0,
 ) -> Analytics:
     """
     Универсальный upsert без ON CONFLICT.
@@ -33,14 +38,14 @@ async def create_or_update_analytics(
         analytics = Analytics(
             user_id=user_id,
             total_points=points_delta,
-            tests_taken=1 if points_delta > 0 else 0,
+            tests_taken=max(int(tests_delta), 0),
             last_active=func.now() if mark_active else None
         )
         session.add(analytics)
     else:
         analytics.total_points += points_delta
-        if points_delta > 0:
-            analytics.tests_taken += 1
+        if tests_delta != 0:
+            analytics.tests_taken = max(int(analytics.tests_taken or 0) + int(tests_delta), 0)
         if mark_active:
             analytics.last_active = func.now()
 
@@ -63,6 +68,16 @@ async def apply_points_delta(session: AsyncSession, user_id: int, points_delta: 
     analytics.total_points = float(analytics.total_points or 0.0) + float(points_delta)
     await session.flush()
     return analytics
+
+
+async def register_completed_attempt(session: AsyncSession, user_id: int) -> Analytics:
+    return await create_or_update_analytics(
+        session,
+        user_id=user_id,
+        points_delta=0.0,
+        mark_active=True,
+        tests_delta=1,
+    )
 
 
 async def get_leaderboard(session: AsyncSession, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
@@ -212,3 +227,174 @@ async def retention_cohort(session: AsyncSession, start_date: str, period_days: 
     res = await session.execute(sql, {"start_date": start_date, "period_days": period_days})
     rows = res.fetchall()
     return [{"user_id": r["user_id"], "active_days": r["active_days"]} for r in rows]
+
+
+async def analytics_overview(session: AsyncSession) -> Dict[str, int]:
+    total_users = int(await session.scalar(select(func.count(User.id))) or 0)
+    total_materials = int(await session.scalar(select(func.count(Material.id))) or 0)
+    total_tests = int(await session.scalar(select(func.count(Test.id))) or 0)
+    published_tests = int(await session.scalar(select(func.count(Test.id)).where(Test.published.is_(True))) or 0)
+    total_questions = int(await session.scalar(select(func.count(Question.id))) or 0)
+    total_answers = int(await session.scalar(select(func.count(Answer.id))) or 0)
+    completed_attempts = int(
+        await session.scalar(select(func.count(TestAttempt.id)).where(TestAttempt.status == "completed")) or 0
+    )
+    pending_open_answers = int(
+        await session.scalar(
+            select(func.count(Answer.id))
+            .join(Question, Answer.question_id == Question.id)
+            .where(Question.is_open_answer.is_(True), Answer.score.is_(None))
+        )
+        or 0
+    )
+    active_users_7d = int(
+        await session.scalar(
+            select(func.count(func.distinct(Answer.user_id))).where(
+                Answer.created_at >= func.now() - text("interval '7 days'")
+            )
+        )
+        or 0
+    )
+    return {
+        "total_users": total_users,
+        "total_materials": total_materials,
+        "total_tests": total_tests,
+        "published_tests": published_tests,
+        "total_questions": total_questions,
+        "total_answers": total_answers,
+        "completed_attempts": completed_attempts,
+        "pending_open_answers": pending_open_answers,
+        "active_users_7d": active_users_7d,
+    }
+
+
+async def user_performance(session: AsyncSession, user_id: int) -> Optional[Dict[str, Any]]:
+    user = await session.get(User, user_id)
+    if user is None:
+        return None
+
+    analytics = await get_user_analytics(session, user_id)
+    completed_attempts = int(
+        await session.scalar(
+            select(func.count(TestAttempt.id)).where(
+                TestAttempt.user_id == user_id,
+                TestAttempt.status == "completed",
+            )
+        )
+        or 0
+    )
+    avg_score = await session.scalar(
+        select(func.avg(TestAttempt.score)).where(
+            TestAttempt.user_id == user_id,
+            TestAttempt.status == "completed",
+        )
+    )
+    avg_time = await session.scalar(
+        select(func.avg(TestAttempt.time_spent_seconds)).where(
+            TestAttempt.user_id == user_id,
+            TestAttempt.status == "completed",
+        )
+    )
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "full_name": user.full_name,
+        "total_points": float(analytics.total_points) if analytics is not None and analytics.total_points is not None else 0.0,
+        "tests_taken": int(analytics.tests_taken) if analytics is not None and analytics.tests_taken is not None else 0,
+        "completed_attempts": completed_attempts,
+        "avg_score": float(avg_score) if avg_score is not None else None,
+        "avg_time_seconds": float(avg_time) if avg_time is not None else None,
+        "last_active": analytics.last_active if analytics is not None else None,
+    }
+
+
+async def group_summary(session: AsyncSession, group_id: int) -> Dict[str, Any]:
+    member_ids_subquery = select(GroupMembership.user_id).where(GroupMembership.group_id == group_id)
+
+    members_count = int(await session.scalar(select(func.count(GroupMembership.id)).where(GroupMembership.group_id == group_id)) or 0)
+    active_members_7d = int(
+        await session.scalar(
+            select(func.count(func.distinct(Answer.user_id))).where(
+                Answer.user_id.in_(member_ids_subquery),
+                Answer.created_at >= func.now() - text("interval '7 days'"),
+            )
+        )
+        or 0
+    )
+    total_points = await session.scalar(
+        select(func.coalesce(func.sum(Analytics.total_points), 0)).where(Analytics.user_id.in_(member_ids_subquery))
+    )
+    avg_points = await session.scalar(select(func.avg(Analytics.total_points)).where(Analytics.user_id.in_(member_ids_subquery)))
+    completed_attempts = int(
+        await session.scalar(
+            select(func.count(TestAttempt.id)).where(
+                TestAttempt.user_id.in_(member_ids_subquery),
+                TestAttempt.status == "completed",
+            )
+        )
+        or 0
+    )
+    avg_score = await session.scalar(
+        select(func.avg(TestAttempt.score)).where(
+            TestAttempt.user_id.in_(member_ids_subquery),
+            TestAttempt.status == "completed",
+        )
+    )
+    avg_time = await session.scalar(
+        select(func.avg(TestAttempt.time_spent_seconds)).where(
+            TestAttempt.user_id.in_(member_ids_subquery),
+            TestAttempt.status == "completed",
+        )
+    )
+    avg_completed_attempts = (completed_attempts / members_count) if members_count else None
+
+    return {
+        "group_id": group_id,
+        "members_count": members_count,
+        "active_members_7d": active_members_7d,
+        "total_points": float(total_points or 0.0),
+        "avg_points": float(avg_points) if avg_points is not None else None,
+        "completed_attempts": completed_attempts,
+        "avg_completed_attempts": float(avg_completed_attempts) if avg_completed_attempts is not None else None,
+        "avg_score": float(avg_score) if avg_score is not None else None,
+        "avg_time_seconds": float(avg_time) if avg_time is not None else None,
+    }
+
+
+async def group_member_performance(session: AsyncSession, group_id: int) -> List[Dict[str, Any]]:
+    stmt = (
+        select(User.id)
+        .join(GroupMembership, GroupMembership.user_id == User.id)
+        .where(GroupMembership.group_id == group_id)
+        .order_by(User.username.asc())
+    )
+    user_ids = [row[0] for row in (await session.execute(stmt)).all()]
+    result: List[Dict[str, Any]] = []
+    for user_id in user_ids:
+        performance = await user_performance(session, user_id)
+        if performance is not None:
+            result.append(performance)
+    return result
+
+
+async def test_score_distribution(session: AsyncSession, test_id: int) -> List[Dict[str, Any]]:
+    stmt = select(TestAttempt.score, TestAttempt.max_score).where(
+        TestAttempt.test_id == test_id,
+        TestAttempt.status == "completed",
+    )
+    rows = (await session.execute(stmt)).all()
+    buckets = [
+        {"label": "0-19%", "count": 0},
+        {"label": "20-39%", "count": 0},
+        {"label": "40-59%", "count": 0},
+        {"label": "60-79%", "count": 0},
+        {"label": "80-100%", "count": 0},
+    ]
+    for score, max_score in rows:
+        if not max_score or max_score <= 0:
+            percent = 0.0
+        else:
+            percent = max(0.0, min(100.0, (float(score or 0.0) / float(max_score)) * 100.0))
+        index = min(int(percent // 20), 4)
+        buckets[index]["count"] += 1
+    return buckets

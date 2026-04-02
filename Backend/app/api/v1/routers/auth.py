@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.schemas.user import UserRead, UserCreate
-from app.schemas.token import TokenRead
+from app.schemas.token import TokenRead, LoginRequest
 from app.repositories import auth_repo
 from app.core.security import create_access_token, get_current_user
 from app.models.user import User
@@ -19,6 +19,18 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password",
                             headers={"WWW-Authenticate": "Bearer"})
+    access_token = create_access_token({"sub": user.username, "role": user.role})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/login", response_model=TokenRead)
+async def login_with_json(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+    user = await auth_repo.authenticate_user(db, payload.username, payload.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
     access_token = create_access_token({"sub": user.username, "role": user.role})
     return {"access_token": access_token, "token_type": "bearer"}
 

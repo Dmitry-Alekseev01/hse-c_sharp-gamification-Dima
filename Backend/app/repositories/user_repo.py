@@ -15,9 +15,19 @@ async def list_users(session, limit: int = 100):
     res = await session.execute(q)
     return res.scalars().all()
 
-async def create_user(session, username: str, password_hash: str, full_name: str | None = None):
-    user = User(username=username, password_hash=password_hash, full_name=full_name)
+async def create_user(
+    session,
+    username: str,
+    password_hash: str,
+    full_name: str | None = None,
+    role: str = "user",
+):
+    user = User(username=username, password_hash=password_hash, full_name=full_name, role=role)
     session.add(user)
     await session.flush()
     await session.refresh(user)
     return user
+
+
+async def get_user_by_id(session, user_id: int):
+    return await session.get(User, user_id)

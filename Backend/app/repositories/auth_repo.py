@@ -16,8 +16,20 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> O
     return user
 
 
-async def create_user(db: AsyncSession, username: str, password: str, full_name: str | None = None) -> User:
+async def create_user(
+    db: AsyncSession,
+    username: str,
+    password: str,
+    full_name: str | None = None,
+    role: str = "user",
+) -> User:
     password_hash = get_password_hash(password)
     # repo_create_user expects password_hash param
-    user = await repo_create_user(db, username=username, password_hash=password_hash, full_name=full_name)
+    user = await repo_create_user(
+        db,
+        username=username,
+        password_hash=password_hash,
+        full_name=full_name,
+        role=role,
+    )
     return user

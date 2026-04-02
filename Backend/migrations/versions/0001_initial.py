@@ -25,8 +25,6 @@ def upgrade():
         sa.Column("role", sa.String(length=50), nullable=False, server_default="user"),
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=True),
     )
-    # Add indexes explicitly if desired (create_index not directly in op.create_table signature)
-    op.create_index("ix_users_username", "users", ["username"], unique=False)
 
 
 def downgrade():

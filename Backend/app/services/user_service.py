@@ -13,9 +13,15 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
-async def register_user(session, username: str, password: str, full_name: str | None = None):
+async def register_user(
+    session,
+    username: str,
+    password: str,
+    full_name: str | None = None,
+    role: str = "user",
+):
     existing = await user_repo.get_user_by_username(session, username)
     if existing:
         raise ValueError("username already exists")
     pw_hash = hash_password(password)
-    return await user_repo.create_user(session, username, pw_hash, full_name)
+    return await user_repo.create_user(session, username, pw_hash, full_name, role=role)

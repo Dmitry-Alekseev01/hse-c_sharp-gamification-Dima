@@ -16,6 +16,13 @@ class Test(Base):
     published_at = Column(DateTime, server_default=func.now(), nullable=True)
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=True, index=True)
     deadline = Column(DateTime, nullable=True)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
+    author = relationship(
+        "User",
+        back_populates="tests_authored",
+        lazy="selectin",
+    )
 
     # Test.questions <-> Question.test
     questions = relationship(
