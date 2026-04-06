@@ -7,6 +7,12 @@ class ChoiceCreate(BaseModel):
     ordinal: int | None = None
     is_correct: bool = False
 
+
+class ChoiceUpdate(BaseModel):
+    value: str | None = None
+    ordinal: int | None = None
+    is_correct: bool | None = None
+
 class ChoiceRead(BaseModel):
     id: int
     question_id: int
@@ -26,6 +32,13 @@ class QuestionCreate(BaseModel):
     is_open_answer: bool = False
     material_urls: List[str] | None = None
     choices: List[ChoiceCreate] | None = None
+
+
+class QuestionUpdate(BaseModel):
+    text: str | None = None
+    points: float | None = None
+    is_open_answer: bool | None = None
+    material_urls: List[str] | None = None
 
 class QuestionRead(BaseModel):
     id: int

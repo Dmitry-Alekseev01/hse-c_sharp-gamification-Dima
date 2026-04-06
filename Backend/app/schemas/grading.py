@@ -5,6 +5,11 @@ class GradeRequest(BaseModel):
     score: float = Field(..., ge=0)
     comment: str | None = None
 
+
+class AttemptScoreUpdate(BaseModel):
+    score: float = Field(..., ge=0)
+    comment: str | None = None
+
 class GradeResponse(BaseModel):
     answer_id: int
     score: float

@@ -13,7 +13,7 @@ from app.cache.redis_cache import (
 )
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
-from app.schemas.question import QuestionCreate, QuestionRead, QuestionTeacherRead
+from app.schemas.question import QuestionCreate, QuestionRead, QuestionTeacherRead, QuestionUpdate
 from app.repositories import question_repo, test_repo
 
 router = APIRouter()
@@ -38,8 +38,8 @@ async def create_question(
         material_urls=payload.material_urls,
         choices=[c.model_dump() for c in (payload.choices or [])] if payload.choices else None,
     )
-    await delete_pattern(f"questions:test:{payload.test_id}:*")
-    await delete_pattern(f"tests:content:{payload.test_id}")
+    await delete_pattern(f"questions:test:*:{payload.test_id}:*")
+    await delete_pattern(f"tests:content:*:{payload.test_id}")
     await delete_pattern(f"test:{payload.test_id}:summary*")
     return q
 
@@ -93,7 +93,25 @@ async def delete_question(
     await get_manageable_test(db, question.test_id, current_user)
     await question_repo.delete_question(db, question_id)
     if test_id is not None:
-        await delete_pattern(f"questions:test:{test_id}:*")
-        await delete_pattern(f"tests:content:{test_id}")
+        await delete_pattern(f"questions:test:*:{test_id}:*")
+        await delete_pattern(f"tests:content:*:{test_id}")
         await delete_pattern(f"test:{test_id}:summary*")
     return {}
+
+
+@router.patch("/{question_id}", response_model=QuestionTeacherRead, status_code=status.HTTP_200_OK)
+async def update_question(
+    question_id: int,
+    payload: QuestionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("teacher", "admin")),
+):
+    question = await question_repo.get_question_with_choices(db, question_id)
+    if question is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
+    await get_manageable_test(db, question.test_id, current_user)
+    updated = await question_repo.update_question(db, question_id, **payload.model_dump(exclude_unset=True))
+    await delete_pattern(f"questions:test:*:{question.test_id}:*")
+    await delete_pattern(f"tests:content:*:{question.test_id}")
+    await delete_pattern(f"test:{question.test_id}:summary*")
+    return updated

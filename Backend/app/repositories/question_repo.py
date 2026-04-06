@@ -43,6 +43,32 @@ async def list_questions_for_test(session, test_id: int, limit: int = 100, offse
     res = await session.execute(q)
     return res.scalars().all()
 
+async def update_question(
+    session,
+    question_id: int,
+    *,
+    text: str | None = None,
+    points: float | None = None,
+    is_open_answer: bool | None = None,
+    material_urls: list[str] | None = None,
+):
+    question = await get_question_with_choices(session, question_id)
+    if question is None:
+        return None
+
+    if text is not None:
+        question.text = text
+    if points is not None:
+        question.points = points
+    if is_open_answer is not None:
+        question.is_open_answer = is_open_answer
+    if material_urls is not None:
+        question.material_urls = material_urls
+
+    await session.flush()
+    await session.refresh(question)
+    return question
+
 async def delete_question(session, question_id: int):
     await session.execute(delete(Question).where(Question.id == question_id))
     await session.flush()

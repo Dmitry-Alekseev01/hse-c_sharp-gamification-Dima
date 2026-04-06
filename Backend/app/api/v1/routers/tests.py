@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.access import get_manageable_material, get_manageable_test, get_visible_test
+from app.api.v1.access import get_manageable_material, get_manageable_test, get_user_level_context, get_visible_test, is_unlocked_test
 from app.api.deps import get_db
 from app.cache.redis_cache import (
     TEST_CONTENT_TTL,
@@ -19,6 +19,7 @@ from app.cache.redis_cache import (
 )
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
+from app.schemas.grading import AttemptScoreUpdate
 from app.schemas.question import QuestionRead
 from app.schemas.test_ import TestCreate, TestRead, TestUpdate
 from app.schemas.analytics import TestSummary
@@ -26,6 +27,7 @@ from app.schemas.test_attempt import TestAttemptRead
 from app.schemas.test_content import TestContentRead
 from app.repositories import analytics_repo, test_repo, test_attempt_repo
 from app.repositories import question_repo
+from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user
 
 router = APIRouter()
 
@@ -57,14 +59,17 @@ async def list_tests(
     if not published_only and current_user.role not in {"teacher", "admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
+    _, level_id = await get_user_level_context(db, current_user)
     if published_only:
-        cache_key = cache_key_test_list(published_only=published_only, limit=limit)
+        cache_key = cache_key_test_list(published_only=published_only, limit=limit, level_id=level_id)
         cached = await get(cache_key)
         if cached is not None:
             return cached
 
     author_id = current_user.id if (not published_only and current_user.role == "teacher") else None
     items = await test_repo.list_tests(db, published_only=published_only, limit=limit, author_id=author_id)
+    if published_only and current_user.role not in {"teacher", "admin"}:
+        items = [item for item in items if await is_unlocked_test(db, current_user, item)]
     if published_only:
         payload = [TestRead.model_validate(item).model_dump(mode="json") for item in items]
         await set(cache_key, payload, ttl=TESTS_LIST_TTL)
@@ -77,8 +82,10 @@ async def get_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    level_id = 0
     if current_user.role not in {"teacher", "admin"}:
-        cache_key = cache_key_test_detail(test_id)
+        _, level_id = await get_user_level_context(db, current_user)
+        cache_key = cache_key_test_detail(test_id, level_id=level_id)
         cached = await get(cache_key)
         if cached is not None:
             return cached
@@ -86,7 +93,7 @@ async def get_test(
     t = await get_visible_test(db, test_id, current_user)
     if t.published:
         payload = TestRead.model_validate(t).model_dump(mode="json")
-        await set(cache_key_test_detail(test_id), payload, ttl=TEST_DETAIL_TTL)
+        await set(cache_key_test_detail(test_id, level_id=level_id), payload, ttl=TEST_DETAIL_TTL)
     return t
 
 
@@ -108,6 +115,7 @@ async def create_test(
         material_ids=payload.material_ids,
         deadline=payload.deadline,
         author_id=current_user.id,
+        required_level_id=payload.required_level_id,
     )
     await delete_pattern("tests:list:*")
     await delete_pattern("tests:detail:*")
@@ -197,12 +205,11 @@ async def test_summary(
 ):
     is_teacher = current_user.role in {"teacher", "admin"}
     cache_key = cache_key_test_summary(test_id)
+    test = await get_test_or_summary_access(db, test_id, current_user)
     if not is_teacher:
         cached = await get(cache_key)
         if cached is not None:
             return cached
-
-    test = await get_test_or_summary_access(db, test_id, current_user)
 
     summary = await test_repo.get_test_summary(db, test_id)
     if test.published:
@@ -217,7 +224,8 @@ async def get_test_content(
     current_user: User = Depends(get_current_user),
 ):
     is_teacher = current_user.role in {"teacher", "admin"}
-    cache_key = cache_key_test_content(test_id)
+    _, level_id = await get_user_level_context(db, current_user)
+    cache_key = cache_key_test_content(test_id, level_id=level_id)
     if not is_teacher:
         cached = await get(cache_key)
         if cached is not None:
@@ -241,12 +249,11 @@ async def start_test_attempt(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await get_visible_test(db, test_id, current_user)
-
-    existing_attempt = await test_attempt_repo.get_active_attempt(db, current_user.id, test_id)
-    if existing_attempt is not None:
-        return existing_attempt
-    return await test_attempt_repo.create_attempt(db, current_user.id, test_id)
+    test = await get_visible_test(db, test_id, current_user)
+    try:
+        return await resolve_attempt_for_user(db, test, current_user.id)
+    except AttemptPolicyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
 @router.get("/{test_id}/attempts/me", response_model=List[TestAttemptRead], status_code=status.HTTP_200_OK)
@@ -270,13 +277,44 @@ async def complete_test_attempt(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
     if attempt.user_id != current_user.id and current_user.role not in {"teacher", "admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    test = await get_test_or_summary_access(db, attempt.test_id, current_user)
     if current_user.role == "teacher":
         await get_manageable_test(db, attempt.test_id, current_user)
+    if attempt.status == "completed":
+        return attempt
+    _, _ = await finalize_attempt_if_expired(db, test, attempt)
     if attempt.status == "completed":
         return attempt
     completed_attempt = await test_attempt_repo.complete_attempt(db, attempt)
     await analytics_repo.register_completed_attempt(db, completed_attempt.user_id)
     return completed_attempt
+
+
+@router.patch("/attempts/{attempt_id}/score", response_model=TestAttemptRead, status_code=status.HTTP_200_OK)
+async def override_attempt_score(
+    attempt_id: int,
+    payload: AttemptScoreUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("teacher", "admin")),
+):
+    attempt = await test_attempt_repo.get_attempt(db, attempt_id)
+    if attempt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+    if current_user.role == "teacher":
+        await get_manageable_test(db, attempt.test_id, current_user)
+    if attempt.status != "completed":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attempt must be completed before final grading")
+
+    if attempt.max_score is None:
+        attempt = await test_attempt_repo.refresh_attempt_scores(db, attempt)
+    max_score = float(attempt.max_score or 0.0)
+    if payload.score < 0 or payload.score > max_score:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Score must be between 0 and {max_score}",
+        )
+
+    return await test_attempt_repo.set_manual_score(db, attempt, payload.score)
 
 
 async def get_test_or_summary_access(db: AsyncSession, test_id: int, current_user: User):

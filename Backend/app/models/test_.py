@@ -17,10 +17,17 @@ class Test(Base):
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=True, index=True)
     deadline = Column(DateTime, nullable=True)
     author_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    required_level_id = Column(Integer, ForeignKey("levels.id"), nullable=True, index=True)
 
     author = relationship(
         "User",
         back_populates="tests_authored",
+        lazy="selectin",
+    )
+
+    required_level = relationship(
+        "Level",
+        back_populates="tests",
         lazy="selectin",
     )
 

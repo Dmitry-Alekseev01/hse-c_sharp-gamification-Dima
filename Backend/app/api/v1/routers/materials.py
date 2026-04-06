@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.access import get_manageable_material, get_manageable_test
+from app.api.v1.access import get_manageable_material, get_manageable_test, get_user_level_context, get_visible_material, is_unlocked_material
 from app.api.deps import get_db
 from app.cache.redis_cache import (
     MATERIALS_LIST_TTL,
@@ -36,16 +36,20 @@ async def list_materials(
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    cache_key = cache_key_material_list(limit=limit, offset=offset)
-    cached = await get(cache_key)
-    if cached is not None:
-        return cached
+    _, level_id = await get_user_level_context(db, current_user)
+    if current_user.role not in {"teacher", "admin"}:
+        cache_key = cache_key_material_list(limit=limit, offset=offset, level_id=level_id)
+        cached = await get(cache_key)
+        if cached is not None:
+            return cached
 
     items = await material_repo.list_materials(db, limit=limit, offset=offset)
-    payload = [MaterialRead.model_validate(item).model_dump(mode="json") for item in items]
-    await set(cache_key, payload, ttl=MATERIALS_LIST_TTL)
+    if current_user.role not in {"teacher", "admin"}:
+        items = [item for item in items if await is_unlocked_material(db, current_user, item)]
+        payload = [MaterialRead.model_validate(item).model_dump(mode="json") for item in items]
+        await set(cache_key, payload, ttl=MATERIALS_LIST_TTL)
     return items
 
 
@@ -53,18 +57,19 @@ async def list_materials(
 async def get_material(
     material_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    cache_key = cache_key_material_detail(material_id)
-    cached = await get(cache_key)
-    if cached is not None:
-        return cached
+    _, level_id = await get_user_level_context(db, current_user)
+    if current_user.role not in {"teacher", "admin"}:
+        cache_key = cache_key_material_detail(material_id, level_id=level_id)
+        cached = await get(cache_key)
+        if cached is not None:
+            return cached
 
-    m = await material_repo.get_material(db, material_id)
-    if not m:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
-    payload = MaterialRead.model_validate(m).model_dump(mode="json")
-    await set(cache_key, payload, ttl=MATERIAL_DETAIL_TTL)
+    m = await get_visible_material(db, material_id, current_user)
+    if current_user.role not in {"teacher", "admin"}:
+        payload = MaterialRead.model_validate(m).model_dump(mode="json")
+        await set(cache_key, payload, ttl=MATERIAL_DETAIL_TTL)
     return m
 
 
@@ -87,6 +92,7 @@ async def create_material(
             content_url=payload.content_url,
             video_url=payload.video_url,
             author_id=current_user.id,
+            required_level_id=payload.required_level_id,
             related_test_ids=payload.related_test_ids,
         )
     except Exception as e:

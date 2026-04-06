@@ -8,7 +8,7 @@ from app.models.material import Material
 from app.models.test_attempt import TestAttempt
 
 async def get_test(session, test_id: int):
-    q = select(Test).options(selectinload(Test.materials)).where(Test.id == test_id)
+    q = select(Test).options(selectinload(Test.materials), selectinload(Test.required_level)).where(Test.id == test_id)
     res = await session.execute(q)
     return res.scalars().first()
 
@@ -18,7 +18,7 @@ async def list_tests(
     limit: int = 100,
     author_id: int | None = None,
 ):
-    q = select(Test).options(selectinload(Test.materials))
+    q = select(Test).options(selectinload(Test.materials), selectinload(Test.required_level))
     if published_only:
         q = q.where(Test.published == True)
     if author_id is not None:
@@ -38,6 +38,7 @@ async def create_test(
     material_ids: list[int] | None = None,
     deadline=None,
     author_id: int | None = None,
+    required_level_id: int | None = None,
 ):
     test = Test(
         title=title,
@@ -48,6 +49,7 @@ async def create_test(
         material_id=material_id,
         deadline=deadline,
         author_id=author_id,
+        required_level_id=required_level_id,
     )
     session.add(test)
     await session.flush()
@@ -76,6 +78,7 @@ async def update_test(
     material_id: int | None = None,
     material_ids: list[int] | None = None,
     deadline=None,
+    required_level_id: int | None = None,
 ):
     test = await get_test(session, test_id)
     if test is None:
@@ -95,6 +98,8 @@ async def update_test(
         test.material_id = material_id
     if deadline is not None:
         test.deadline = deadline
+    if required_level_id is not None:
+        test.required_level_id = required_level_id
     if material_ids is not None:
         resolved_material_ids = list(dict.fromkeys([mid for mid in material_ids if mid is not None]))
         if material_id is not None and material_id not in resolved_material_ids:

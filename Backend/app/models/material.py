@@ -14,10 +14,17 @@ class Material(Base):
     video_url = Column(String(1000), nullable=True)
     published_at = Column(DateTime, server_default=func.now(), nullable=True)
     author_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    required_level_id = Column(Integer, ForeignKey("levels.id"), nullable=True, index=True)
 
     # relation to User.author <-> User.materials
     author = relationship(
         "User",
+        back_populates="materials",
+        lazy="selectin",
+    )
+
+    required_level = relationship(
+        "Level",
         back_populates="materials",
         lazy="selectin",
     )

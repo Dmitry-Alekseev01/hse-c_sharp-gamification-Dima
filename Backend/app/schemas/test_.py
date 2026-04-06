@@ -12,6 +12,7 @@ class TestCreate(BaseModel):
     material_id: int | None = None
     material_ids: List[int] | None = None
     deadline: datetime | None = None
+    required_level_id: int | None = None
 
 
 class TestUpdate(BaseModel):
@@ -23,6 +24,7 @@ class TestUpdate(BaseModel):
     material_id: int | None = None
     material_ids: List[int] | None = None
     deadline: datetime | None = None
+    required_level_id: int | None = None
 
 
 class TestRead(BaseModel):
@@ -38,5 +40,6 @@ class TestRead(BaseModel):
     material_ids: List[int]
     deadline: datetime | None
     author_id: int | None
+    required_level_id: int | None
 
     model_config = ConfigDict(from_attributes=True)

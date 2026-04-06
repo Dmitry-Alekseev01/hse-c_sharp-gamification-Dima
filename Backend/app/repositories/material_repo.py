@@ -8,12 +8,12 @@ from app.models.material import Material
 from app.models.test_ import Test
 
 async def get_material(session, material_id: int):
-    q = select(Material).options(selectinload(Material.tests)).where(Material.id == material_id)
+    q = select(Material).options(selectinload(Material.tests), selectinload(Material.required_level)).where(Material.id == material_id)
     res = await session.execute(q)
     return res.scalars().first()
 
 async def list_materials(session, limit: int = 100, offset: int = 0):
-    q = select(Material).options(selectinload(Material.tests)).limit(limit).offset(offset)
+    q = select(Material).options(selectinload(Material.tests), selectinload(Material.required_level)).limit(limit).offset(offset)
     res = await session.execute(q)
     return res.scalars().all()
 
@@ -25,6 +25,7 @@ async def create_material(
     content_url: str | None = None,
     video_url: str | None = None,
     author_id: int | None = None,
+    required_level_id: int | None = None,
     related_test_ids: list[int] | None = None,
 ):
     obj = Material(
@@ -34,6 +35,7 @@ async def create_material(
         content_url=content_url,
         video_url=video_url,
         author_id=author_id,
+        required_level_id=required_level_id,
     )
     session.add(obj)
     await session.flush()
@@ -56,6 +58,7 @@ async def update_material(
     content_text: str | None = None,
     content_url: str | None = None,
     video_url: str | None = None,
+    required_level_id: int | None = None,
     related_test_ids: list[int] | None = None,
 ):
     material = await get_material(session, material_id)
@@ -72,6 +75,8 @@ async def update_material(
         material.content_url = content_url
     if video_url is not None:
         material.video_url = video_url
+    if required_level_id is not None:
+        material.required_level_id = required_level_id
     if related_test_ids is not None:
         tests = (
             await session.execute(select(Test).where(Test.id.in_(related_test_ids)))

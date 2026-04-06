@@ -2,6 +2,8 @@ from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
 
+from app.schemas.level import LevelRead
+
 class AnalyticsRead(BaseModel):
     user_id: int
     total_points: float
@@ -58,10 +60,23 @@ class UserPerformanceRead(BaseModel):
     full_name: str | None
     total_points: float
     tests_taken: int
+    streak_days: int
+    current_level_id: int | None
     completed_attempts: int
     avg_score: float | None
     avg_time_seconds: float | None
     last_active: datetime | None
+
+
+class UserGamificationProgressRead(BaseModel):
+    user_id: int
+    username: str
+    total_points: float
+    streak_days: int
+    current_level: LevelRead | None
+    next_level: LevelRead | None
+    points_to_next_level: float
+    progress_percent: float
 
 
 class GroupAnalyticsSummaryRead(BaseModel):

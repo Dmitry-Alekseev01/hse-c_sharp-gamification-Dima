@@ -8,6 +8,7 @@ from app.core.security import get_current_user, require_roles
 from app.schemas.answer import AnswerCreate, AnswerRead, PendingOpenAnswerRead
 from app.schemas.grading import GradeRequest
 from app.services.answer_service import submit_answer, manual_grade_open_answer as manual_grade_open_answer_service
+from app.services.test_runtime import AttemptPolicyError, resolve_attempt_for_user
 from app.repositories import answer_repo, test_attempt_repo, test_repo
 from app.models.answer import Answer as AnswerModel
 from app.models.user import User
@@ -65,14 +66,13 @@ async def create_answer(
       - enqueues open answers for manual grading
       - invalidates caches (best-effort)
     """
-    await get_visible_test(db, payload.test_id, current_user)
-
-    if payload.attempt_id is not None:
-        attempt = await test_attempt_repo.get_attempt(db, payload.attempt_id)
-        if attempt is None or attempt.user_id != current_user.id or attempt.test_id != payload.test_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid attempt_id")
-        if attempt.status == "completed":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attempt is already completed")
+    test = await get_visible_test(db, payload.test_id, current_user)
+    try:
+        attempt = await resolve_attempt_for_user(db, test, current_user.id, payload.attempt_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except AttemptPolicyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     try:
         ans = await submit_answer(
             db,
@@ -80,7 +80,7 @@ async def create_answer(
             payload.test_id,
             payload.question_id,
             payload.answer_payload,
-            attempt_id=payload.attempt_id,
+            attempt_id=attempt.id,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

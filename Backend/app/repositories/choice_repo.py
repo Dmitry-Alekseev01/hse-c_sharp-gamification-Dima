@@ -13,6 +13,29 @@ async def create_choice(session, question_id: int, value: str, ordinal: int | No
     await session.refresh(ch)
     return ch
 
+async def update_choice(
+    session,
+    choice_id: int,
+    *,
+    value: str | None = None,
+    ordinal: int | None = None,
+    is_correct: bool | None = None,
+):
+    choice = await session.get(Choice, choice_id)
+    if choice is None:
+        return None
+
+    if value is not None:
+        choice.value = value
+    if ordinal is not None:
+        choice.ordinal = ordinal
+    if is_correct is not None:
+        choice.is_correct = is_correct
+
+    await session.flush()
+    await session.refresh(choice)
+    return choice
+
 async def delete_choice(session, choice_id: int):
     await session.execute(delete(Choice).where(Choice.id == choice_id))
-    await session.flush()  # необязательно, но для единообразия
+    await session.flush()

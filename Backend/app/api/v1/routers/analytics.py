@@ -12,6 +12,7 @@ from app.schemas.analytics import (
     GroupAnalyticsSummaryRead,
     ScoreBucketRead,
     TestSummary,
+    UserGamificationProgressRead,
     UserPerformanceRead,
 )
 from app.schemas.level import LevelRead
@@ -47,6 +48,20 @@ async def get_user_analytics(
         # Could be that row not created yet — return 404 or an empty/zero object depending on your policy.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analytics not found for user")
     return analytics
+
+
+@router.get("/user/{user_id}/progress", response_model=UserGamificationProgressRead, status_code=status.HTTP_200_OK)
+async def get_user_progress(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.id != user_id and current_user.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    progress = await analytics_repo.get_gamification_progress(db, user_id)
+    if progress is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return progress
 
 
 @router.get("/leaderboard", status_code=status.HTTP_200_OK)
