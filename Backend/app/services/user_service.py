@@ -1,17 +1,6 @@
-"""
-app/services/user_service.py
-DESCRIPTION: business logic for users. Password hashing done here (passlib).
-"""
-from passlib.context import CryptContext
+"""User domain service."""
+from app.core.security import get_password_hash
 from app.repositories import user_repo
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
 
 async def register_user(
     session,
@@ -23,5 +12,5 @@ async def register_user(
     existing = await user_repo.get_user_by_username(session, username)
     if existing:
         raise ValueError("username already exists")
-    pw_hash = hash_password(password)
+    pw_hash = get_password_hash(password)
     return await user_repo.create_user(session, username, pw_hash, full_name, role=role)

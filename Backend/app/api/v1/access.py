@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.material import Material
 from app.models.test_ import Test
 from app.models.user import User
-from app.repositories import analytics_repo, material_repo, test_repo
+from app.repositories import analytics_repo, level_repo, material_repo, test_repo
 
 
 def can_manage_test(current_user: User, test: Test) -> bool:
@@ -72,6 +72,17 @@ async def get_user_level_context(db: AsyncSession, current_user: User) -> tuple[
     total_points = float(analytics.total_points or 0.0) if analytics is not None else 0.0
     level_id = int(analytics.current_level_id or 0) if analytics is not None else 0
     return total_points, level_id
+
+
+async def ensure_level_exists_or_400(db: AsyncSession, level_id: int | None) -> None:
+    if level_id is None:
+        return
+    level = await level_repo.get_level_by_id(db, level_id)
+    if level is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="required_level_id does not reference an existing level",
+        )
 
 
 async def is_unlocked_test(db: AsyncSession, current_user: User, test: Test) -> bool:

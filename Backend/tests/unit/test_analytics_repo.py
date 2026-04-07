@@ -4,6 +4,8 @@ pytestmark = pytest.mark.asyncio
 from datetime import datetime, timedelta
 
 from app.models.level import Level
+from app.models.test_ import Test
+from app.models.test_attempt import TestAttempt as AttemptModel
 from app.models.user import User
 from app.repositories import analytics_repo
 
@@ -25,7 +27,7 @@ async def test_create_or_update_analytics_and_leaderboard(db):
     lb = await analytics_repo.get_leaderboard(db, limit=10)
     assert isinstance(lb, list)
     # first entry should be present u1 (10 points)
-    assert any(entry["id"] == u1.id for entry in lb)
+    assert any(entry["user_id"] == u1.id for entry in lb)
     # ordering by total_points desc (if at least 2 rows)
     if len(lb) >= 2:
         assert lb[0]["total_points"] >= lb[1]["total_points"]
@@ -83,3 +85,42 @@ async def test_gamification_progress_reports_next_level(db):
     assert progress["current_level"]["id"] == level_1.id
     assert progress["next_level"]["id"] == level_2.id
     assert progress["points_to_next_level"] == pytest.approx(60.0)
+    assert progress["completed_attempts"] == 0
+    assert progress["earned_badges_count"] >= 0
+    assert any(badge["code"] == "first_steps" and badge["earned"] is False for badge in progress["badges"])
+
+
+@pytest.mark.asyncio
+async def test_gamification_progress_reports_earned_badges(db):
+    user = User(username="badge_user", password_hash="x", role="user")
+    level_1 = Level(name="Beginner", required_points=0)
+    test = Test(title="Badge test", published=True)
+    db.add_all([user, level_1, test])
+    await db.flush()
+
+    analytics = await analytics_repo.create_or_update_analytics(db, user.id, points_delta=120.0, mark_active=True)
+    analytics.streak_days = 7
+    db.add(
+        AttemptModel(
+            user_id=user.id,
+            test_id=test.id,
+            status="completed",
+            score=10.0,
+            max_score=10.0,
+            time_spent_seconds=60,
+            submitted_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+        )
+    )
+    await db.flush()
+    await analytics_repo.register_completed_attempt(db, user.id)
+
+    progress = await analytics_repo.get_gamification_progress(db, user.id)
+
+    assert progress is not None
+    assert progress["completed_attempts"] == 1
+    earned = {badge["code"] for badge in progress["badges"] if badge["earned"]}
+    assert "first_steps" in earned
+    assert "focused_three" in earned
+    assert "focused_week" in earned
+    assert "century_points" in earned

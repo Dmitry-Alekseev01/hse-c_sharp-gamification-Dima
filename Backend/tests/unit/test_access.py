@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 
 pytestmark = pytest.mark.asyncio
 
@@ -18,7 +19,7 @@ async def test_locked_test_and_material_depend_on_required_level_points(db):
     await db.flush()
 
     test = Test(title="Locked test", published=True, required_level_id=level.id)
-    material = Material(title="Locked material", content_text="content", required_level_id=level.id)
+    material = Material(title="Locked material", required_level_id=level.id)
     db.add_all([test, material])
     await db.flush()
     await db.refresh(test)
@@ -33,3 +34,12 @@ async def test_locked_test_and_material_depend_on_required_level_points(db):
 
     assert await access.is_unlocked_test(db, user, test) is True
     assert await access.is_unlocked_material(db, user, material) is True
+
+
+@pytest.mark.asyncio
+async def test_ensure_level_exists_or_400_rejects_unknown_level(db):
+    with pytest.raises(HTTPException) as exc_info:
+        await access.ensure_level_exists_or_400(db, 999999)
+
+    assert exc_info.value.status_code == 400
+    assert "required_level_id" in str(exc_info.value.detail)

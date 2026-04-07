@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import case, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import Analytics
@@ -100,6 +100,47 @@ async def register_completed_attempt(session: AsyncSession, user_id: int) -> Ana
     )
 
 
+def _build_badges(*, total_points: float, streak_days: int, completed_attempts: int) -> List[Dict[str, Any]]:
+    definitions = [
+        {
+            "code": "first_steps",
+            "title": "First Steps",
+            "description": "Complete your first test attempt.",
+            "reward": "Unlock your first achievement badge.",
+            "earned": completed_attempts >= 1,
+        },
+        {
+            "code": "focused_three",
+            "title": "3-Day Streak",
+            "description": "Stay active for 3 consecutive days.",
+            "reward": "Showcase consistency in your profile.",
+            "earned": streak_days >= 3,
+        },
+        {
+            "code": "focused_week",
+            "title": "7-Day Streak",
+            "description": "Stay active for 7 consecutive days.",
+            "reward": "Highlight long-running learning momentum.",
+            "earned": streak_days >= 7,
+        },
+        {
+            "code": "century_points",
+            "title": "100 Points",
+            "description": "Earn at least 100 total points.",
+            "reward": "Prove solid progress in the course.",
+            "earned": total_points >= 100.0,
+        },
+        {
+            "code": "test_marathon",
+            "title": "5 Completed Tests",
+            "description": "Finish 5 test attempts.",
+            "reward": "Unlock marathon learner status.",
+            "earned": completed_attempts >= 5,
+        },
+    ]
+    return definitions
+
+
 async def get_gamification_progress(session: AsyncSession, user_id: int) -> Optional[Dict[str, Any]]:
     analytics = await get_user_analytics(session, user_id)
     user = await session.get(User, user_id)
@@ -108,8 +149,22 @@ async def get_gamification_progress(session: AsyncSession, user_id: int) -> Opti
 
     total_points = float(analytics.total_points) if analytics is not None and analytics.total_points is not None else 0.0
     streak_days = int(analytics.streak_days) if analytics is not None and analytics.streak_days is not None else 0
+    completed_attempts = int(
+        await session.scalar(
+            select(func.count(TestAttempt.id)).where(
+                TestAttempt.user_id == user_id,
+                TestAttempt.status == "completed",
+            )
+        ) or 0
+    )
     current_level = await level_repo.get_current_level_for_points(session, total_points)
     next_level = await level_repo.get_next_level_for_points(session, total_points)
+    badges = _build_badges(
+        total_points=total_points,
+        streak_days=streak_days,
+        completed_attempts=completed_attempts,
+    )
+    earned_badges_count = sum(1 for badge in badges if badge["earned"])
 
     current_required = float(current_level.required_points) if current_level is not None else 0.0
     next_required = float(next_level.required_points) if next_level is not None else None
@@ -126,6 +181,7 @@ async def get_gamification_progress(session: AsyncSession, user_id: int) -> Opti
         "username": user.username,
         "total_points": total_points,
         "streak_days": streak_days,
+        "completed_attempts": completed_attempts,
         "current_level": {
             "id": current_level.id,
             "name": current_level.name,
@@ -140,12 +196,14 @@ async def get_gamification_progress(session: AsyncSession, user_id: int) -> Opti
         } if next_level is not None else None,
         "points_to_next_level": points_to_next_level,
         "progress_percent": progress_percent,
+        "earned_badges_count": earned_badges_count,
+        "badges": badges,
     }
 
 
 async def get_leaderboard(session: AsyncSession, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
     q = (
-        select(User.id.label("id"), User.username.label("username"), Analytics.total_points)
+        select(User.id.label("user_id"), User.username.label("username"), Analytics.total_points)
         .join(Analytics, Analytics.user_id == User.id)
         .order_by(desc(Analytics.total_points))
         .limit(limit)
@@ -403,19 +461,55 @@ async def group_summary(session: AsyncSession, group_id: int) -> Dict[str, Any]:
 
 
 async def group_member_performance(session: AsyncSession, group_id: int) -> List[Dict[str, Any]]:
+    attempts_agg = (
+        select(
+            TestAttempt.user_id.label("user_id"),
+            func.sum(case((TestAttempt.status == "completed", 1), else_=0)).label("completed_attempts"),
+            func.avg(case((TestAttempt.status == "completed", TestAttempt.score), else_=None)).label("avg_score"),
+            func.avg(case((TestAttempt.status == "completed", TestAttempt.time_spent_seconds), else_=None)).label(
+                "avg_time_seconds"
+            ),
+        )
+        .group_by(TestAttempt.user_id)
+        .subquery()
+    )
     stmt = (
-        select(User.id)
+        select(
+            User.id.label("user_id"),
+            User.username.label("username"),
+            User.full_name.label("full_name"),
+            Analytics.total_points.label("total_points"),
+            Analytics.tests_taken.label("tests_taken"),
+            Analytics.streak_days.label("streak_days"),
+            Analytics.current_level_id.label("current_level_id"),
+            Analytics.last_active.label("last_active"),
+            attempts_agg.c.completed_attempts.label("completed_attempts"),
+            attempts_agg.c.avg_score.label("avg_score"),
+            attempts_agg.c.avg_time_seconds.label("avg_time_seconds"),
+        )
         .join(GroupMembership, GroupMembership.user_id == User.id)
+        .outerjoin(Analytics, Analytics.user_id == User.id)
+        .outerjoin(attempts_agg, attempts_agg.c.user_id == User.id)
         .where(GroupMembership.group_id == group_id)
         .order_by(User.username.asc())
     )
-    user_ids = [row[0] for row in (await session.execute(stmt)).all()]
-    result: List[Dict[str, Any]] = []
-    for user_id in user_ids:
-        performance = await user_performance(session, user_id)
-        if performance is not None:
-            result.append(performance)
-    return result
+    rows = (await session.execute(stmt)).mappings().all()
+    return [
+        {
+            "user_id": row["user_id"],
+            "username": row["username"],
+            "full_name": row["full_name"],
+            "total_points": float(row["total_points"] or 0.0),
+            "tests_taken": int(row["tests_taken"] or 0),
+            "streak_days": int(row["streak_days"] or 0),
+            "current_level_id": int(row["current_level_id"]) if row["current_level_id"] is not None else None,
+            "completed_attempts": int(row["completed_attempts"] or 0),
+            "avg_score": float(row["avg_score"]) if row["avg_score"] is not None else None,
+            "avg_time_seconds": float(row["avg_time_seconds"]) if row["avg_time_seconds"] is not None else None,
+            "last_active": row["last_active"],
+        }
+        for row in rows
+    ]
 
 
 async def test_score_distribution(session: AsyncSession, test_id: int) -> List[Dict[str, Any]]:

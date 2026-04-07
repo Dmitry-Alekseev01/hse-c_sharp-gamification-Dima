@@ -9,7 +9,7 @@ from app.schemas.answer import AnswerCreate, AnswerRead, PendingOpenAnswerRead
 from app.schemas.grading import GradeRequest
 from app.services.answer_service import submit_answer, manual_grade_open_answer as manual_grade_open_answer_service
 from app.services.test_runtime import AttemptPolicyError, resolve_attempt_for_user
-from app.repositories import answer_repo, test_attempt_repo, test_repo
+from app.repositories import answer_repo, test_repo
 from app.models.answer import Answer as AnswerModel
 from app.models.user import User
 
@@ -122,15 +122,22 @@ async def get_answers_for_test(
     current_user: User = Depends(get_current_user),
 ):
     test = await get_visible_test(db, test_id, current_user)
-    answers = await answer_repo.get_answers_for_test(db, test_id=test_id, limit=limit, offset=offset)
+    scoped_user_id: int | None = None
     if current_user.role not in {"teacher", "admin"}:
         if user_id is not None and user_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-        answers = [a for a in answers if a.user_id == current_user.id]
+        scoped_user_id = current_user.id
     elif current_user.role == "teacher" and not can_manage_test(current_user, test):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    elif user_id is not None:
-        answers = [a for a in answers if a.user_id == user_id]
+    else:
+        scoped_user_id = user_id
+    answers = await answer_repo.get_answers_for_test(
+        db,
+        test_id=test_id,
+        limit=limit,
+        offset=offset,
+        user_id=scoped_user_id,
+    )
     return answers
 
 

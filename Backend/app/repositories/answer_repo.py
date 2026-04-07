@@ -4,7 +4,7 @@ Answer repository: persistence + MCQ autograder helper.
 Functions:
 - record_answer(session, user_id, test_id, question_id, payload)
 - grade_mcq_answer(session, answer_id)
-- get_answers_for_test(session, test_id, limit=100, offset=0)
+- get_answers_for_test(session, test_id, limit=100, offset=0, user_id=None)
 """
 from typing import Optional
 from sqlalchemy import select
@@ -136,8 +136,17 @@ async def grade_mcq_answer(session, answer_id: int) -> Optional[Answer]:
     return answer
 
 
-async def get_answers_for_test(session, test_id: int, limit: int = 100, offset: int = 0):
-    stmt = select(Answer).where(Answer.test_id == test_id).limit(limit).offset(offset)
+async def get_answers_for_test(
+    session,
+    test_id: int,
+    limit: int = 100,
+    offset: int = 0,
+    user_id: int | None = None,
+):
+    stmt = select(Answer).where(Answer.test_id == test_id)
+    if user_id is not None:
+        stmt = stmt.where(Answer.user_id == user_id)
+    stmt = stmt.order_by(Answer.id.asc()).limit(limit).offset(offset)
     res = await session.execute(stmt)
     return res.scalars().all()
 

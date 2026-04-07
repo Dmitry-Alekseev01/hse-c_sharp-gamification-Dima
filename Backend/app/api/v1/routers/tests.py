@@ -2,18 +2,28 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.access import get_manageable_material, get_manageable_test, get_user_level_context, get_visible_test, is_unlocked_test
+from app.api.v1.access import (
+    get_manageable_test,
+    get_user_level_context,
+    get_visible_test,
+    is_unlocked_test,
+)
 from app.api.deps import get_db
 from app.cache.redis_cache import (
+    NS_MATERIALS,
+    NS_TESTS,
+    NS_TEST_CONTENT,
+    NS_TEST_SUMMARY,
     TEST_CONTENT_TTL,
     TESTS_LIST_TTL,
     TEST_DETAIL_TTL,
     TEST_SUMMARY_TTL,
+    bump_cache_namespace,
     cache_key_test_content,
     cache_key_test_detail,
     cache_key_test_list,
     cache_key_test_summary,
-    delete_pattern,
+    get_cache_namespace_version,
     get,
     set,
 )
@@ -27,26 +37,10 @@ from app.schemas.test_attempt import TestAttemptRead
 from app.schemas.test_content import TestContentRead
 from app.repositories import analytics_repo, test_repo, test_attempt_repo
 from app.repositories import question_repo
+from app.services import test_service
 from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user
 
 router = APIRouter()
-
-
-async def _validate_related_materials(
-    db: AsyncSession,
-    current_user: User,
-    material_id: int | None,
-    material_ids: list[int] | None,
-) -> None:
-    candidate_ids = []
-    if material_id is not None:
-        candidate_ids.append(material_id)
-    if material_ids:
-        candidate_ids.extend(material_ids)
-
-    seen_ids = {candidate_id for candidate_id in candidate_ids if candidate_id is not None}
-    for candidate_id in seen_ids:
-        await get_manageable_material(db, candidate_id, current_user)
 
 
 @router.get("/", response_model=List[TestRead], status_code=status.HTTP_200_OK)
@@ -61,7 +55,13 @@ async def list_tests(
 
     _, level_id = await get_user_level_context(db, current_user)
     if published_only:
-        cache_key = cache_key_test_list(published_only=published_only, limit=limit, level_id=level_id)
+        version = await get_cache_namespace_version(NS_TESTS)
+        cache_key = cache_key_test_list(
+            published_only=published_only,
+            limit=limit,
+            level_id=level_id,
+            version=version,
+        )
         cached = await get(cache_key)
         if cached is not None:
             return cached
@@ -85,7 +85,8 @@ async def get_test(
     level_id = 0
     if current_user.role not in {"teacher", "admin"}:
         _, level_id = await get_user_level_context(db, current_user)
-        cache_key = cache_key_test_detail(test_id, level_id=level_id)
+        version = await get_cache_namespace_version(NS_TESTS)
+        cache_key = cache_key_test_detail(test_id, level_id=level_id, version=version)
         cached = await get(cache_key)
         if cached is not None:
             return cached
@@ -93,7 +94,8 @@ async def get_test(
     t = await get_visible_test(db, test_id, current_user)
     if t.published:
         payload = TestRead.model_validate(t).model_dump(mode="json")
-        await set(cache_key_test_detail(test_id, level_id=level_id), payload, ttl=TEST_DETAIL_TTL)
+        version = await get_cache_namespace_version(NS_TESTS)
+        await set(cache_key_test_detail(test_id, level_id=level_id, version=version), payload, ttl=TEST_DETAIL_TTL)
     return t
 
 
@@ -103,25 +105,8 @@ async def create_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("teacher", "admin")),
 ):
-    await _validate_related_materials(db, current_user, payload.material_id, payload.material_ids)
-    test = await test_repo.create_test(
-        db,
-        title=payload.title,
-        description=payload.description,
-        time_limit_minutes=payload.time_limit_minutes,
-        max_score=payload.max_score,
-        published=payload.published,
-        material_id=payload.material_id,
-        material_ids=payload.material_ids,
-        deadline=payload.deadline,
-        author_id=current_user.id,
-        required_level_id=payload.required_level_id,
-    )
-    await delete_pattern("tests:list:*")
-    await delete_pattern("tests:detail:*")
-    await delete_pattern("tests:content:*")
-    await delete_pattern("test:*:summary*")
-    await delete_pattern("materials:*")
+    test = await test_service.create_test(db, payload, current_user)
+    await bump_cache_namespace(NS_TESTS, NS_TEST_CONTENT, NS_TEST_SUMMARY, NS_MATERIALS)
     return test
 
 
@@ -132,16 +117,8 @@ async def update_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("teacher", "admin")),
 ):
-    await get_manageable_test(db, test_id, current_user)
-    await _validate_related_materials(db, current_user, payload.material_id, payload.material_ids)
-    test = await test_repo.update_test(db, test_id, **payload.model_dump(exclude_unset=True))
-    if test is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
-    await delete_pattern("tests:list:*")
-    await delete_pattern("tests:detail:*")
-    await delete_pattern("tests:content:*")
-    await delete_pattern(f"test:{test_id}:summary*")
-    await delete_pattern("materials:*")
+    test = await test_service.update_test(db, test_id, payload, current_user)
+    await bump_cache_namespace(NS_TESTS, NS_TEST_CONTENT, NS_TEST_SUMMARY, NS_MATERIALS)
     return test
 
 
@@ -155,10 +132,7 @@ async def publish_test(
     test = await test_repo.update_test(db, test_id, published=True)
     if test is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
-    await delete_pattern("tests:list:*")
-    await delete_pattern("tests:detail:*")
-    await delete_pattern("tests:content:*")
-    await delete_pattern(f"test:{test_id}:summary*")
+    await bump_cache_namespace(NS_TESTS, NS_TEST_CONTENT, NS_TEST_SUMMARY)
     return test
 
 
@@ -172,10 +146,7 @@ async def hide_test(
     test = await test_repo.update_test(db, test_id, published=False)
     if test is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
-    await delete_pattern("tests:list:*")
-    await delete_pattern("tests:detail:*")
-    await delete_pattern("tests:content:*")
-    await delete_pattern(f"test:{test_id}:summary*")
+    await bump_cache_namespace(NS_TESTS, NS_TEST_CONTENT, NS_TEST_SUMMARY)
     return test
 
 
@@ -189,11 +160,7 @@ async def delete_test(
     deleted = await test_repo.delete_test(db, test_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
-    await delete_pattern("tests:list:*")
-    await delete_pattern("tests:detail:*")
-    await delete_pattern("tests:content:*")
-    await delete_pattern(f"test:{test_id}:summary*")
-    await delete_pattern("materials:*")
+    await bump_cache_namespace(NS_TESTS, NS_TEST_CONTENT, NS_TEST_SUMMARY, NS_MATERIALS)
     return {}
 
 
@@ -204,8 +171,9 @@ async def test_summary(
     current_user: User = Depends(get_current_user),
 ):
     is_teacher = current_user.role in {"teacher", "admin"}
-    cache_key = cache_key_test_summary(test_id)
-    test = await get_test_or_summary_access(db, test_id, current_user)
+    summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+    cache_key = cache_key_test_summary(test_id, version=summary_version)
+    test = await test_service.get_test_or_summary_access(db, test_id, current_user)
     if not is_teacher:
         cached = await get(cache_key)
         if cached is not None:
@@ -225,7 +193,8 @@ async def get_test_content(
 ):
     is_teacher = current_user.role in {"teacher", "admin"}
     _, level_id = await get_user_level_context(db, current_user)
-    cache_key = cache_key_test_content(test_id, level_id=level_id)
+    content_version = await get_cache_namespace_version(NS_TEST_CONTENT)
+    cache_key = cache_key_test_content(test_id, level_id=level_id, version=content_version)
     if not is_teacher:
         cached = await get(cache_key)
         if cached is not None:
@@ -277,7 +246,7 @@ async def complete_test_attempt(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
     if attempt.user_id != current_user.id and current_user.role not in {"teacher", "admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    test = await get_test_or_summary_access(db, attempt.test_id, current_user)
+    test = await test_service.get_test_or_summary_access(db, attempt.test_id, current_user)
     if current_user.role == "teacher":
         await get_manageable_test(db, attempt.test_id, current_user)
     if attempt.status == "completed":
@@ -315,12 +284,3 @@ async def override_attempt_score(
         )
 
     return await test_attempt_repo.set_manual_score(db, attempt, payload.score)
-
-
-async def get_test_or_summary_access(db: AsyncSession, test_id: int, current_user: User):
-    test = await get_visible_test(db, test_id, current_user)
-    if current_user.role == "teacher" and not test.published:
-        await get_manageable_test(db, test_id, current_user)
-    if current_user.role == "teacher" and not (test.author_id == current_user.id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-    return test

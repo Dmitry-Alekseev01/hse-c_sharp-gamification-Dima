@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
 from app.models.answer import Answer
@@ -130,35 +130,53 @@ async def get_test_summary(session, test_id: int):
     - avg_score_per_attempt (overall)
     - completion_rate (approx)
     """
-    total_q = await session.scalar(select(func.count(Question.id)).where(Question.test_id == test_id))
-    total_attempts = await session.scalar(select(func.count(TestAttempt.id)).where(TestAttempt.test_id == test_id))
-    completed_attempts = await session.scalar(
-        select(func.count(TestAttempt.id)).where(
-            TestAttempt.test_id == test_id,
-            TestAttempt.status == "completed",
+    attempts_agg = (
+        select(
+            func.count(TestAttempt.id).label("total_attempts"),
+            func.sum(case((TestAttempt.status == "completed", 1), else_=0)).label("completed_attempts"),
+            func.avg(case((TestAttempt.status == "completed", TestAttempt.score), else_=None)).label("avg_score"),
+            func.avg(case((TestAttempt.status == "completed", TestAttempt.time_spent_seconds), else_=None)).label(
+                "avg_time_seconds"
+            ),
         )
+        .where(TestAttempt.test_id == test_id)
+        .subquery()
     )
-    avg_score = await session.scalar(
-        select(func.avg(TestAttempt.score)).where(
-            TestAttempt.test_id == test_id,
-            TestAttempt.status == "completed",
+    answers_agg = (
+        select(
+            func.count(func.distinct(Answer.attempt_id)).label("fallback_attempts"),
+            func.avg(Answer.score).label("fallback_avg_score"),
         )
-    )
-    avg_time = await session.scalar(
-        select(func.avg(TestAttempt.time_spent_seconds)).where(
-            TestAttempt.test_id == test_id,
-            TestAttempt.status == "completed",
+        .where(
+            Answer.test_id == test_id,
+            Answer.attempt_id.is_not(None),
         )
+        .subquery()
     )
-    if not total_attempts:
-        total_attempts = await session.scalar(select(func.count(func.distinct(Answer.attempt_id))).where(Answer.test_id == test_id, Answer.attempt_id.is_not(None)))
+    stmt = select(
+        select(func.count(Question.id)).where(Question.test_id == test_id).scalar_subquery().label("total_questions"),
+        attempts_agg.c.total_attempts,
+        attempts_agg.c.completed_attempts,
+        attempts_agg.c.avg_score,
+        attempts_agg.c.avg_time_seconds,
+        answers_agg.c.fallback_attempts,
+        answers_agg.c.fallback_avg_score,
+    )
+    row = (await session.execute(stmt)).mappings().first()
+    total_q = int(row["total_questions"] or 0)
+    total_attempts = int(row["total_attempts"] or 0)
+    if total_attempts == 0:
+        total_attempts = int(row["fallback_attempts"] or 0)
+    completed_attempts = int(row["completed_attempts"] or 0)
+    avg_score = row["avg_score"]
     if avg_score is None:
-        avg_score = await session.scalar(select(func.avg(Answer.score)).where(Answer.test_id == test_id))
+        avg_score = row["fallback_avg_score"]
+    avg_time = row["avg_time_seconds"]
     return {
         "test_id": test_id,
-        "total_questions": total_q or 0,
-        "total_attempts": total_attempts or 0,
-        "completed_attempts": completed_attempts or 0,
+        "total_questions": total_q,
+        "total_attempts": total_attempts,
+        "completed_attempts": completed_attempts,
         "avg_score": float(avg_score) if avg_score is not None else None,
         "avg_time_seconds": float(avg_time) if avg_time is not None else None,
     }

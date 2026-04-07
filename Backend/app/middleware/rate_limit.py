@@ -4,7 +4,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.cache.redis_client import redis_client
+from app.cache.redis_cache import get_redis_client
 from app.core.config import settings
 
 
@@ -23,7 +23,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         bucket = int(time.time() // window)
         key = f"rate:{scope}:{identifier}:{bucket}"
 
-        client = await redis_client.get()
+        client = get_redis_client()
         current = await client.incr(key)
         if current == 1:
             await client.expire(key, window + 1)

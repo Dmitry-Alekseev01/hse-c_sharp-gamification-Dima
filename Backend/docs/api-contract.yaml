@@ -48,30 +48,106 @@ components:
       properties:
         id: { type: integer }
         title: { type: string }
+        material_type:
+          type: string
+          enum: [lesson, module, article]
+          example: lesson
+        status:
+          type: string
+          enum: [draft, published, archived]
+          example: published
         description: { type: string, nullable: true }
-        content_text: { type: string }
-        content_url: { type: string, nullable: true }
-        video_url: { type: string, nullable: true }
         published_at: { type: string, format: date-time, nullable: true }
         author_id: { type: integer, nullable: true }
         required_level_id: { type: integer, nullable: true }
         related_test_ids:
           type: array
           items: { type: integer }
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialBlockRead'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialAttachmentRead'
 
     MaterialCreate:
       type: object
-      required: [title, content_text]
+      required: [title]
       properties:
         title: { type: string }
+        material_type:
+          type: string
+          enum: [lesson, module, article]
+          example: lesson
+        status:
+          type: string
+          enum: [draft, published, archived]
+          example: published
         description: { type: string, nullable: true }
-        content_text: { type: string }
-        content_url: { type: string, nullable: true }
-        video_url: { type: string, nullable: true }
         required_level_id: { type: integer, nullable: true }
         related_test_ids:
           type: array
           items: { type: integer }
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialBlockCreate'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialAttachmentCreate'
+
+    MaterialBlockCreate:
+      type: object
+      required: [block_type]
+      properties:
+        block_type:
+          type: string
+          enum: [text, documentation_link, video_link, code_example]
+          example: text
+        title: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        url: { type: string, nullable: true }
+        order_index: { type: integer }
+
+    MaterialBlockRead:
+      type: object
+      properties:
+        id: { type: integer }
+        block_type:
+          type: string
+          enum: [text, documentation_link, video_link, code_example]
+        title: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        url: { type: string, nullable: true }
+        order_index: { type: integer }
+
+    MaterialAttachmentCreate:
+      type: object
+      required: [title, file_url]
+      properties:
+        title: { type: string }
+        file_url: { type: string }
+        file_kind:
+          type: string
+          enum: [pdf, docx, pptx, other]
+          example: pdf
+        order_index: { type: integer }
+        is_downloadable: { type: boolean }
+
+    MaterialAttachmentRead:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        file_url: { type: string }
+        file_kind:
+          type: string
+          enum: [pdf, docx, pptx, other]
+        order_index: { type: integer }
+        is_downloadable: { type: boolean }
 
     TestRead:
       type: object
@@ -122,6 +198,7 @@ components:
         username: { type: string }
         total_points: { type: number, format: float }
         streak_days: { type: integer }
+        completed_attempts: { type: integer }
         current_level:
           allOf:
             - $ref: '#/components/schemas/LevelRead'
@@ -132,6 +209,20 @@ components:
           nullable: true
         points_to_next_level: { type: number, format: float }
         progress_percent: { type: number, format: float }
+        earned_badges_count: { type: integer }
+        badges:
+          type: array
+          items:
+            $ref: '#/components/schemas/GamificationBadgeRead'
+
+    GamificationBadgeRead:
+      type: object
+      properties:
+        code: { type: string }
+        title: { type: string }
+        description: { type: string }
+        reward: { type: string, nullable: true }
+        earned: { type: boolean }
 
     ChoiceRead:
       type: object
@@ -329,6 +420,7 @@ paths:
                 items: { $ref: '#/components/schemas/MaterialRead' }
     post:
       summary: Create material
+      description: Canonical content format is `blocks` + `attachments`.
       requestBody:
         required: true
         content:
@@ -351,6 +443,7 @@ paths:
               schema: { $ref: '#/components/schemas/MaterialRead' }
     patch:
       summary: Update owned material
+      description: Update material content via `blocks` and `attachments`.
       responses:
         '200':
           content:
