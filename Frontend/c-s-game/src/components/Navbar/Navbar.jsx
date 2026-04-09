@@ -109,7 +109,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { PERSONAL_ACCOUNT_ROUTE } from '../../routing/const';
-import { getToken, logoutUser, fetchUserProfile } from '../../api/usersAPI';
+import { getToken, logoutUser, fetchUserProfile } from '../../api/api';
 import './Navbar.css';
 
 const Navbar = () => {

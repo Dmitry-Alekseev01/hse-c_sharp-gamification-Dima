@@ -107,7 +107,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchUserProfile, getToken, logoutUser } from '../../api/usersAPI';
+import { fetchUserProfile, getToken, logoutUser } from '../../api/api';
 import './PersonalAccount.css';
 
 const PersonalAccount = () => {

@@ -198,7 +198,7 @@
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { registerUser } from '../../api/usersAPI';
+import { registerUser } from '../../api/api';
 import { MAIN_ROUTE, LOGIN_ROUTE } from '../../routing/const';
 import './Authorisation.css';
 
