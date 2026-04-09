@@ -162,7 +162,7 @@
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { loginUser } from '../../api/usersAPI';
+import { loginUser } from '../../api/api';
 import { MAIN_ROUTE, REGISTER_ROUTE, FORGOT_PASSWORD_ROUTE } from '../../routing/const';
 import './Authorisation.css';
 
