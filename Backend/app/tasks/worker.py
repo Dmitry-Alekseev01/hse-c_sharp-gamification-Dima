@@ -3,7 +3,12 @@ import json
 import logging
 from typing import Optional
 
-from app.cache.redis_cache import delete_pattern, get_redis_client
+from app.cache.redis_cache import (
+    NS_LEADERBOARD,
+    NS_TEST_SUMMARY,
+    bump_cache_namespace,
+    get_redis_client,
+)
 from app.db.session import AsyncSessionLocal
 from app.models.answer import Answer
 from app.repositories import analytics_repo, test_attempt_repo
@@ -72,9 +77,7 @@ async def process_answer_postprocess(job_payload: str) -> None:
             return
 
     try:
-        await delete_pattern("leaderboard:top:*")
-        await delete_pattern(f"test:{test_id}:summary*")
-        await delete_pattern(f"user:{user_id}:analytics*")
+        await bump_cache_namespace(NS_LEADERBOARD, NS_TEST_SUMMARY)
     except Exception:
         logger.exception("Failed to invalidate caches after answer postprocess for test=%s user=%s", test_id, user_id)
 

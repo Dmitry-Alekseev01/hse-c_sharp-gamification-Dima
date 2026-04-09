@@ -3,6 +3,7 @@ DESCRIPTION: Level entity (mapping points -> level).
 Fields: id, name, required_points, description
 """
 from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy.orm import relationship
 from app.db.session import Base
 
 class Level(Base):
@@ -12,3 +13,6 @@ class Level(Base):
     name = Column(String(200), nullable=False)
     required_points = Column(Integer, nullable=False, default=0)
     description = Column(Text, nullable=True)
+
+    materials = relationship("Material", back_populates="required_level", lazy="selectin")
+    tests = relationship("Test", back_populates="required_level", lazy="selectin")

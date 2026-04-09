@@ -49,14 +49,14 @@ jobs:
 
       - name: Start services (detached)
         working-directory: ./Backend
-        run: docker compose up -d
+        run: docker compose up -d postgres redis
 
-      - name: Wait for app container to be ready
+      - name: Print service status and logs
+        if: always()
         working-directory: ./Backend
         run: |
-          echo "Waiting for app to be healthy..."
-          timeout 60s sh -c 'until docker compose ps app --format json | jq -e ".Health == \"healthy\""; do sleep 2; done'
-        continue-on-error: true
+          docker compose ps
+          docker compose logs --no-color --tail=200 postgres redis app worker || true
 
       - name: Create test results directory
         working-directory: ./Backend

@@ -1,11 +1,19 @@
 # app/schemas/auth.py
-from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
-class Token(BaseModel):
+from pydantic import BaseModel, ConfigDict
+
+
+class TokenRead(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_at: datetime | None = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 
 class TokenPayload(BaseModel):
     sub: str

@@ -1,0 +1,767 @@
+openapi: 3.0.3
+info:
+  title: HSE C# Gamification Backend API
+  version: 1.0.0
+  description: Frontend-oriented API contract for the current backend.
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+
+    TokenRead:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: bearer }
+
+    UserCreate:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        full_name: { type: string, nullable: true }
+
+    UserRead:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        full_name: { type: string, nullable: true }
+        role: { type: string, enum: [user, teacher, admin] }
+
+    MaterialRead:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        material_type:
+          type: string
+          enum: [lesson, module, article]
+          example: lesson
+        status:
+          type: string
+          enum: [draft, published, archived]
+          example: published
+        description: { type: string, nullable: true }
+        published_at: { type: string, format: date-time, nullable: true }
+        author_id: { type: integer, nullable: true }
+        required_level_id: { type: integer, nullable: true }
+        related_test_ids:
+          type: array
+          items: { type: integer }
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialBlockRead'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialAttachmentRead'
+
+    MaterialCreate:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        material_type:
+          type: string
+          enum: [lesson, module, article]
+          example: lesson
+        status:
+          type: string
+          enum: [draft, published, archived]
+          example: published
+        description: { type: string, nullable: true }
+        required_level_id: { type: integer, nullable: true }
+        related_test_ids:
+          type: array
+          items: { type: integer }
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialBlockCreate'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaterialAttachmentCreate'
+
+    MaterialBlockCreate:
+      type: object
+      required: [block_type]
+      properties:
+        block_type:
+          type: string
+          enum: [text, documentation_link, video_link, code_example]
+          example: text
+        title: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        url: { type: string, nullable: true }
+        order_index: { type: integer }
+
+    MaterialBlockRead:
+      type: object
+      properties:
+        id: { type: integer }
+        block_type:
+          type: string
+          enum: [text, documentation_link, video_link, code_example]
+        title: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        url: { type: string, nullable: true }
+        order_index: { type: integer }
+
+    MaterialAttachmentCreate:
+      type: object
+      required: [title, file_url]
+      properties:
+        title: { type: string }
+        file_url: { type: string }
+        file_kind:
+          type: string
+          enum: [pdf, docx, pptx, other]
+          example: pdf
+        order_index: { type: integer }
+        is_downloadable: { type: boolean }
+
+    MaterialAttachmentRead:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        file_url: { type: string }
+        file_kind:
+          type: string
+          enum: [pdf, docx, pptx, other]
+        order_index: { type: integer }
+        is_downloadable: { type: boolean }
+
+    TestRead:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        time_limit_minutes: { type: integer, nullable: true }
+        max_score: { type: integer, nullable: true }
+        published: { type: boolean }
+        published_at: { type: string, format: date-time, nullable: true }
+        material_id: { type: integer, nullable: true }
+        material_ids:
+          type: array
+          items: { type: integer }
+        deadline: { type: string, format: date-time, nullable: true }
+        author_id: { type: integer, nullable: true }
+        required_level_id: { type: integer, nullable: true }
+
+    TestCreate:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        description: { type: string, nullable: true }
+        time_limit_minutes: { type: integer, nullable: true }
+        max_score: { type: integer, nullable: true }
+        published: { type: boolean }
+        material_id: { type: integer, nullable: true }
+        material_ids:
+          type: array
+          items: { type: integer }
+        deadline: { type: string, format: date-time, nullable: true }
+        required_level_id: { type: integer, nullable: true }
+
+    LevelRead:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        required_points: { type: integer }
+        description: { type: string, nullable: true }
+
+    UserGamificationProgressRead:
+      type: object
+      properties:
+        user_id: { type: integer }
+        username: { type: string }
+        total_points: { type: number, format: float }
+        streak_days: { type: integer }
+        completed_attempts: { type: integer }
+        current_level:
+          allOf:
+            - $ref: '#/components/schemas/LevelRead'
+          nullable: true
+        next_level:
+          allOf:
+            - $ref: '#/components/schemas/LevelRead'
+          nullable: true
+        points_to_next_level: { type: number, format: float }
+        progress_percent: { type: number, format: float }
+        earned_badges_count: { type: integer }
+        badges:
+          type: array
+          items:
+            $ref: '#/components/schemas/GamificationBadgeRead'
+
+    GamificationBadgeRead:
+      type: object
+      properties:
+        code: { type: string }
+        title: { type: string }
+        description: { type: string }
+        reward: { type: string, nullable: true }
+        earned: { type: boolean }
+
+    ChoiceRead:
+      type: object
+      properties:
+        id: { type: integer }
+        question_id: { type: integer }
+        value: { type: string }
+        ordinal: { type: integer, nullable: true }
+
+    QuestionRead:
+      type: object
+      properties:
+        id: { type: integer }
+        test_id: { type: integer }
+        text: { type: string }
+        points: { type: number, format: float }
+        is_open_answer: { type: boolean }
+        material_urls:
+          type: array
+          nullable: true
+          items: { type: string }
+        choices:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ChoiceRead'
+
+    TestContentRead:
+      type: object
+      properties:
+        test:
+          $ref: '#/components/schemas/TestRead'
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionRead'
+
+    AnswerCreate:
+      type: object
+      required: [test_id, question_id, answer_payload]
+      properties:
+        test_id: { type: integer }
+        attempt_id: { type: integer, nullable: true }
+        question_id: { type: integer }
+        answer_payload:
+          type: string
+          description: choice id as string for closed questions, free text for open questions
+
+    AnswerRead:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        test_id: { type: integer }
+        attempt_id: { type: integer, nullable: true }
+        question_id: { type: integer }
+        answer_payload: { type: string }
+        score: { type: number, format: float, nullable: true }
+        graded_by: { type: integer, nullable: true }
+        graded_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    PendingOpenAnswerRead:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        student_username: { type: string }
+        test_id: { type: integer }
+        attempt_id: { type: integer, nullable: true }
+        question_id: { type: integer }
+        question_text: { type: string }
+        answer_payload: { type: string }
+        submitted_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    GradeRequest:
+      type: object
+      required: [score]
+      properties:
+        score: { type: number, format: float }
+        comment: { type: string, nullable: true }
+
+    AttemptScoreUpdate:
+      type: object
+      required: [score]
+      properties:
+        score: { type: number, format: float }
+        comment: { type: string, nullable: true }
+
+    TestAttemptRead:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        test_id: { type: integer }
+        status: { type: string }
+        score: { type: number, format: float, nullable: true }
+        manual_score: { type: number, format: float, nullable: true }
+        max_score: { type: number, format: float, nullable: true }
+        time_spent_seconds: { type: integer, nullable: true }
+        started_at: { type: string, format: date-time }
+        submitted_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+
+    TestSummary:
+      type: object
+      properties:
+        test_id: { type: integer }
+        total_questions: { type: integer }
+        total_attempts: { type: integer }
+        completed_attempts: { type: integer }
+        avg_score: { type: number, format: float, nullable: true }
+        avg_time_seconds: { type: number, format: float, nullable: true }
+
+paths:
+  /health/live:
+    get:
+      security: []
+      summary: Liveness probe
+      responses:
+        '200': { description: OK }
+
+  /health/ready:
+    get:
+      security: []
+      summary: Readiness probe
+      responses:
+        '200': { description: Readiness payload }
+
+  /api/v1/auth/token:
+    post:
+      security: []
+      summary: OAuth2 form login
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenRead' }
+
+  /api/v1/auth/login:
+    post:
+      security: []
+      summary: JSON login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenRead' }
+
+  /api/v1/auth/register:
+    post:
+      security: []
+      summary: Self-register as user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRead' }
+
+  /api/v1/auth/me:
+    get:
+      summary: Current user
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRead' }
+
+  /api/v1/materials:
+    get:
+      summary: List materials
+      description: For regular users the backend returns only materials unlocked by the user's current level.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MaterialRead' }
+    post:
+      summary: Create material
+      description: Canonical content format is `blocks` + `attachments`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaterialCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaterialRead' }
+
+  /api/v1/materials/{material_id}:
+    get:
+      summary: Material details
+      description: Regular users can only fetch materials unlocked by their current level.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaterialRead' }
+    patch:
+      summary: Update owned material
+      description: Update material content via `blocks` and `attachments`.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaterialRead' }
+    delete:
+      summary: Delete owned material
+      responses:
+        '204': { description: Deleted }
+
+  /api/v1/tests:
+    get:
+      summary: List tests, published only by default
+      description: For regular users published tests are additionally filtered by required level.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TestRead' }
+    post:
+      summary: Create test
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestRead' }
+
+  /api/v1/tests/{test_id}:
+    get:
+      summary: Test details
+      description: Regular users can only fetch published tests unlocked by their current level.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestRead' }
+    patch:
+      summary: Update owned test
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestRead' }
+    delete:
+      summary: Delete owned test
+      responses:
+        '204': { description: Deleted }
+
+  /api/v1/tests/{test_id}/publish:
+    post:
+      summary: Publish owned test
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestRead' }
+
+  /api/v1/tests/{test_id}/hide:
+    post:
+      summary: Hide owned test
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestRead' }
+
+  /api/v1/tests/{test_id}/summary:
+    get:
+      summary: Test summary
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestSummary' }
+
+  /api/v1/tests/{test_id}/content:
+    get:
+      summary: Batched test content for frontend
+      description: Regular users can only fetch content for published tests unlocked by their current level.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestContentRead' }
+
+  /api/v1/tests/{test_id}/attempts/start:
+    post:
+      summary: Start attempt or return active one
+      description: One active attempt per test. Re-taking completed test is forbidden. Locked tests are inaccessible for regular users until their level is high enough.
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestAttemptRead' }
+        '409': { description: Deadline passed, time limit exceeded, or test already completed }
+
+  /api/v1/tests/{test_id}/attempts/me:
+    get:
+      summary: List current user attempts for a test
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TestAttemptRead' }
+
+  /api/v1/tests/attempts/{attempt_id}/complete:
+    post:
+      summary: Complete attempt
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestAttemptRead' }
+
+  /api/v1/tests/attempts/{attempt_id}/score:
+    patch:
+      summary: Manual override for completed attempt score
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttemptScoreUpdate' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestAttemptRead' }
+        '409': { description: Attempt must be completed }
+
+  /api/v1/questions/test/{test_id}:
+    get:
+      summary: List test questions
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/QuestionRead' }
+
+  /api/v1/questions:
+    post:
+      summary: Create question in owned test
+      responses:
+        '201': { description: Teacher question payload with choices including is_correct }
+
+  /api/v1/questions/{question_id}:
+    get:
+      summary: Question details
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuestionRead' }
+    patch:
+      summary: Update owned question
+      responses:
+        '200': { description: Teacher question payload }
+    delete:
+      summary: Delete owned question
+      responses:
+        '204': { description: Deleted }
+
+  /api/v1/choices/question/{question_id}:
+    get:
+      summary: List choices for question
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChoiceRead' }
+
+  /api/v1/choices:
+    post:
+      summary: Create choice in owned test
+      responses:
+        '201': { description: Teacher choice payload with is_correct }
+
+  /api/v1/choices/{choice_id}:
+    patch:
+      summary: Update choice in owned test
+      responses:
+        '200': { description: Teacher choice payload with is_correct }
+    delete:
+      summary: Delete choice in owned test
+      responses:
+        '204': { description: Deleted }
+
+  /api/v1/answers:
+    post:
+      summary: Submit answer
+      description: Backend resolves or auto-creates active attempt if attempt_id is omitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnswerCreate' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnswerRead' }
+        '409': { description: Deadline passed, time limit exceeded, or test already completed }
+
+  /api/v1/answers/test/{test_id}:
+    get:
+      summary: Answers for test
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AnswerRead' }
+
+  /api/v1/answers/pending/open:
+    get:
+      summary: Pending open answers for teacher/admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PendingOpenAnswerRead' }
+
+  /api/v1/answers/{answer_id}/grade:
+    post:
+      summary: Manual grade for open answer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GradeRequest' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnswerRead' }
+
+  /api/v1/analytics/leaderboard:
+    get:
+      summary: Leaderboard
+      responses:
+        '200': { description: List of leaderboard rows }
+
+  /api/v1/analytics/user/{user_id}/progress:
+    get:
+      summary: Gamification progress for user
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserGamificationProgressRead' }
+
+  /api/v1/analytics/overview:
+    get:
+      summary: System overview for teacher/admin
+      responses:
+        '200': { description: Overview payload }
+
+  /api/v1/analytics/levels:
+    get:
+      summary: List configured levels via analytics namespace
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LevelRead' }
+
+  /api/v1/analytics/test/{test_id}/completed-summary:
+    get:
+      summary: Attempt-based test summary
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestSummary' }
+
+  /api/v1/levels:
+    get:
+      summary: List levels
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LevelRead' }
+
+  /api/v1/levels/by-points:
+    get:
+      summary: Resolve level by current points
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LevelRead' }
+
+  /api/v1/groups:
+    get:
+      summary: List groups for current teacher/admin
+      responses:
+        '200': { description: Group list }
+    post:
+      summary: Create group
+      responses:
+        '201': { description: Group created }

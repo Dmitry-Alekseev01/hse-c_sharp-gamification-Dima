@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     postgres_db: str = Field("app_db", env="POSTGRES_DB")
     postgres_host: str = Field("postgres", env="POSTGRES_HOST")
     postgres_port: int = Field(5432, env="POSTGRES_PORT")
+    db_pool_size: int = Field(10, env="DB_POOL_SIZE")
+    db_max_overflow: int = Field(20, env="DB_MAX_OVERFLOW")
+    db_pool_timeout_seconds: int = Field(30, env="DB_POOL_TIMEOUT_SECONDS")
+    db_pool_recycle_seconds: int = Field(1800, env="DB_POOL_RECYCLE_SECONDS")
+    db_pool_pre_ping: bool = Field(True, env="DB_POOL_PRE_PING")
 
     # secret / auth
     secret_key: str = Field("replace-me-please-change", env="SECRET_KEY")

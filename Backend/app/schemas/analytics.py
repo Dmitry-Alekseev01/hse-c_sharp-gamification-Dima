@@ -1,6 +1,9 @@
-from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
+
+from app.schemas.level import LevelRead
 
 class AnalyticsRead(BaseModel):
     user_id: int
@@ -58,10 +61,34 @@ class UserPerformanceRead(BaseModel):
     full_name: str | None
     total_points: float
     tests_taken: int
+    streak_days: int
+    current_level_id: int | None
     completed_attempts: int
     avg_score: float | None
     avg_time_seconds: float | None
     last_active: datetime | None
+
+
+class GamificationBadgeRead(BaseModel):
+    code: str
+    title: str
+    description: str
+    reward: str | None
+    earned: bool
+
+
+class UserGamificationProgressRead(BaseModel):
+    user_id: int
+    username: str
+    total_points: float
+    streak_days: int
+    completed_attempts: int
+    current_level: LevelRead | None
+    next_level: LevelRead | None
+    points_to_next_level: float
+    progress_percent: float
+    earned_badges_count: int
+    badges: list[GamificationBadgeRead]
 
 
 class GroupAnalyticsSummaryRead(BaseModel):
@@ -79,3 +106,28 @@ class GroupAnalyticsSummaryRead(BaseModel):
 class ScoreBucketRead(BaseModel):
     label: str
     count: int
+
+
+class UserBriefRead(BaseModel):
+    user_id: int
+    username: str
+
+
+class TestAverageScoreRead(BaseModel):
+    test_id: int
+    avg_score: float | None
+
+
+class TestAverageTimeRead(BaseModel):
+    test_id: int
+    avg_time_seconds: float | None
+
+
+class DailyActiveRead(BaseModel):
+    day: datetime
+    dau: int
+
+
+class RetentionEntryRead(BaseModel):
+    user_id: int
+    active_days: list[datetime | None]

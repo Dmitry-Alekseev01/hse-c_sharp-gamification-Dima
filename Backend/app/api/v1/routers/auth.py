@@ -4,11 +4,11 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.schemas.user import UserRead, UserCreate
-from app.schemas.token import TokenRead, LoginRequest
-from app.repositories import auth_repo
 from app.core.security import create_access_token, get_current_user
 from app.models.user import User
+from app.repositories import auth_repo
+from app.schemas.auth import LoginRequest, TokenRead
+from app.schemas.user import UserRead, UserCreate
 
 router = APIRouter()
 
@@ -20,7 +20,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password",
                             headers={"WWW-Authenticate": "Bearer"})
     access_token = create_access_token({"sub": user.username, "role": user.role})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return TokenRead(access_token=access_token, token_type="bearer")
 
 
 @router.post("/login", response_model=TokenRead)
@@ -32,7 +32,7 @@ async def login_with_json(payload: LoginRequest, db: AsyncSession = Depends(get_
             detail="Incorrect username or password",
         )
     access_token = create_access_token({"sub": user.username, "role": user.role})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return TokenRead(access_token=access_token, token_type="bearer")
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)

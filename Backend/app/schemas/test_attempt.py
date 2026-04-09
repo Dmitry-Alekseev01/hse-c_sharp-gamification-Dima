@@ -13,6 +13,7 @@ class TestAttemptRead(BaseModel):
     test_id: int
     status: str
     score: float | None
+    manual_score: float | None
     max_score: float | None
     time_spent_seconds: int | None
     started_at: datetime

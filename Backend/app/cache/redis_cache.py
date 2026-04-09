@@ -7,6 +7,13 @@ from app.core.config import settings
 
 _redis: Optional[aioredis.Redis] = None
 
+NS_MATERIALS = "materials"
+NS_TESTS = "tests"
+NS_TEST_CONTENT = "test_content"
+NS_TEST_SUMMARY = "test_summary"
+NS_QUESTIONS = "questions"
+NS_LEADERBOARD = "leaderboard"
+
 MATERIALS_LIST_TTL = 300
 MATERIAL_DETAIL_TTL = 600
 TESTS_LIST_TTL = 120
@@ -21,6 +28,30 @@ def get_redis_client() -> aioredis.Redis:
     if _redis is None:
         _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     return _redis
+
+
+def _namespace_key(namespace: str) -> str:
+    return f"cache:ns:{namespace}"
+
+
+async def get_cache_namespace_version(namespace: str) -> int:
+    r = get_redis_client()
+    raw = await r.get(_namespace_key(namespace))
+    try:
+        return int(raw) if raw is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+async def bump_cache_namespace(*namespaces: str) -> None:
+    names = sorted({name for name in namespaces if name})
+    if not names:
+        return
+    r = get_redis_client()
+    pipe = r.pipeline(transaction=False)
+    for namespace in names:
+        pipe.incr(_namespace_key(namespace))
+    await pipe.execute()
 
 async def initialize():
     r = get_redis_client()
@@ -84,36 +115,36 @@ async def delete_pattern(pattern: str) -> None:
 def cache_key_leaderboard(prefix: str = "leaderboard:top", n: int = 100) -> str:
     return f"{prefix}:{n}"
 
-def cache_key_test_summary(test_id: int) -> str:
-    return f"test:{test_id}:summary"
+def cache_key_test_summary(test_id: int, version: int = 0) -> str:
+    return f"test:v{version}:{test_id}:summary"
 
 
-def cache_key_material_list(limit: int, offset: int) -> str:
-    return f"materials:list:{limit}:{offset}"
+def cache_key_material_list(limit: int, offset: int, level_id: int = 0, version: int = 0) -> str:
+    return f"materials:v{version}:list:{level_id}:{limit}:{offset}"
 
 
-def cache_key_material_detail(material_id: int) -> str:
-    return f"materials:detail:{material_id}"
+def cache_key_material_detail(material_id: int, level_id: int = 0, version: int = 0) -> str:
+    return f"materials:v{version}:detail:{level_id}:{material_id}"
 
 
-def cache_key_test_list(published_only: bool, limit: int) -> str:
-    return f"tests:list:{int(published_only)}:{limit}"
+def cache_key_test_list(published_only: bool, limit: int, level_id: int = 0, version: int = 0) -> str:
+    return f"tests:v{version}:list:{level_id}:{int(published_only)}:{limit}"
 
 
-def cache_key_test_detail(test_id: int) -> str:
-    return f"tests:detail:{test_id}"
+def cache_key_test_detail(test_id: int, level_id: int = 0, version: int = 0) -> str:
+    return f"tests:v{version}:detail:{level_id}:{test_id}"
 
 
-def cache_key_leaderboard_page(limit: int, offset: int) -> str:
-    return f"leaderboard:top:{limit}:{offset}"
+def cache_key_leaderboard_page(limit: int, offset: int, version: int = 0) -> str:
+    return f"leaderboard:v{version}:top:{limit}:{offset}"
 
 
-def cache_key_question_list(test_id: int, limit: int, offset: int) -> str:
-    return f"questions:test:{test_id}:{limit}:{offset}"
+def cache_key_question_list(test_id: int, limit: int, offset: int, level_id: int = 0, version: int = 0) -> str:
+    return f"questions:v{version}:test:{level_id}:{test_id}:{limit}:{offset}"
 
 
-def cache_key_test_content(test_id: int) -> str:
-    return f"tests:content:{test_id}"
+def cache_key_test_content(test_id: int, level_id: int = 0, version: int = 0) -> str:
+    return f"tests:content:v{version}:{level_id}:{test_id}"
 
 @asynccontextmanager
 async def redis_lock(name: str, timeout: int = 10):

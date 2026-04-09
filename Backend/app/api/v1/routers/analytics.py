@@ -1,17 +1,32 @@
-from typing import List, Dict, Any, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.cache.redis_cache import LEADERBOARD_TTL, cache_key_leaderboard_page, get, set
+from app.cache.redis_cache import (
+    LEADERBOARD_TTL,
+    NS_LEADERBOARD,
+    cache_key_leaderboard_page,
+    get,
+    get_cache_namespace_version,
+    set,
+)
 from app.core.security import get_current_user, require_roles
 from app.schemas.analytics import (
     AnalyticsOverviewRead,
     AnalyticsRead,
+    DailyActiveRead,
     GroupAnalyticsSummaryRead,
+    LeaderboardEntry,
+    QuestionStats,
+    RetentionEntryRead,
     ScoreBucketRead,
     TestSummary,
+    TestAverageScoreRead,
+    TestAverageTimeRead,
+    UserBriefRead,
+    UserGamificationProgressRead,
     UserPerformanceRead,
 )
 from app.schemas.level import LevelRead
@@ -44,22 +59,34 @@ async def get_user_analytics(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
     analytics = await analytics_repo.get_user_analytics(db, user_id)
     if not analytics:
-        # Could be that row not created yet — return 404 or an empty/zero object depending on your policy.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analytics not found for user")
     return analytics
 
 
-@router.get("/leaderboard", status_code=status.HTTP_200_OK)
+@router.get("/user/{user_id}/progress", response_model=UserGamificationProgressRead, status_code=status.HTTP_200_OK)
+async def get_user_progress(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.id != user_id and current_user.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    progress = await analytics_repo.get_gamification_progress(db, user_id)
+    if progress is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return progress
+
+
+@router.get("/leaderboard", response_model=List[LeaderboardEntry], status_code=status.HTTP_200_OK)
 async def leaderboard(
     limit: int = Query(50, ge=1, le=500),
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """
-    Leaderboard by total_points (descending). Returns list of {id, username, total_points}
-    """
-    cache_key = cache_key_leaderboard_page(limit=limit, offset=offset)
+    """Leaderboard by total_points (descending)."""
+    version = await get_cache_namespace_version(NS_LEADERBOARD)
+    cache_key = cache_key_leaderboard_page(limit=limit, offset=offset, version=version)
     cached = await get(cache_key)
     if cached is not None:
         return cached
@@ -89,7 +116,7 @@ async def list_levels(
     return lvls
 
 
-@router.get("/level/{level_id}/below", status_code=status.HTTP_200_OK)
+@router.get("/level/{level_id}/below", response_model=List[UserBriefRead], status_code=status.HTTP_200_OK)
 async def users_below_level(
     level_id: int,
     db: AsyncSession = Depends(get_db),
@@ -99,11 +126,10 @@ async def users_below_level(
     List users whose total_points are below the required points for the level.
     """
     users = await analytics_repo.users_below_level(db, level_id)
-    # return simple list of user dicts
-    return [{"id": getattr(u, "id", None), "username": getattr(u, "username", None)} for u in users]
+    return [{"user_id": u.id, "username": u.username} for u in users]
 
 
-@router.get("/level/{level_id}/reached", status_code=status.HTTP_200_OK)
+@router.get("/level/{level_id}/reached", response_model=List[UserBriefRead], status_code=status.HTTP_200_OK)
 async def users_reached_level(
     level_id: int,
     db: AsyncSession = Depends(get_db),
@@ -113,10 +139,10 @@ async def users_reached_level(
     List users who currently have this level assigned (by current_level_id).
     """
     users = await analytics_repo.users_reached_level(db, level_id)
-    return [{"id": getattr(u, "id", None), "username": getattr(u, "username", None)} for u in users]
+    return [{"user_id": u.id, "username": u.username} for u in users]
 
 
-@router.get("/question/{question_id}/stats", status_code=status.HTTP_200_OK)
+@router.get("/question/{question_id}/stats", response_model=QuestionStats, status_code=status.HTTP_200_OK)
 async def question_stats(
     question_id: int,
     db: AsyncSession = Depends(get_db),
@@ -129,7 +155,7 @@ async def question_stats(
     return stats
 
 
-@router.get("/test/{test_id}/avg_score", status_code=status.HTTP_200_OK)
+@router.get("/test/{test_id}/avg_score", response_model=TestAverageScoreRead, status_code=status.HTTP_200_OK)
 async def avg_score_test(
     test_id: int,
     db: AsyncSession = Depends(get_db),
@@ -142,7 +168,7 @@ async def avg_score_test(
     return {"test_id": test_id, "avg_score": avg}
 
 
-@router.get("/test/{test_id}/avg_time", status_code=status.HTTP_200_OK)
+@router.get("/test/{test_id}/avg_time", response_model=TestAverageTimeRead, status_code=status.HTTP_200_OK)
 async def avg_time_test(
     test_id: int,
     db: AsyncSession = Depends(get_db),
@@ -215,7 +241,7 @@ async def group_members_performance(
     return await analytics_repo.group_member_performance(db, group_id)
 
 
-@router.get("/dau", status_code=status.HTTP_200_OK)
+@router.get("/dau", response_model=List[DailyActiveRead], status_code=status.HTTP_200_OK)
 async def daily_active(
     days: int = Query(7, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
@@ -228,7 +254,7 @@ async def daily_active(
     return res
 
 
-@router.get("/retention", status_code=status.HTTP_200_OK)
+@router.get("/retention", response_model=List[RetentionEntryRead], status_code=status.HTTP_200_OK)
 async def retention_cohort(
     start_date: str,
     period_days: int = Query(7, ge=1),

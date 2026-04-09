@@ -5,16 +5,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.access import get_manageable_test, get_visible_test
 from app.api.deps import get_db
 from app.cache.redis_cache import (
+    NS_QUESTIONS,
+    NS_TEST_CONTENT,
+    NS_TEST_SUMMARY,
     QUESTION_LIST_TTL,
+    bump_cache_namespace,
     cache_key_question_list,
-    delete_pattern,
+    get_cache_namespace_version,
     get,
     set,
 )
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
-from app.schemas.question import QuestionCreate, QuestionRead, QuestionTeacherRead
-from app.repositories import question_repo, test_repo
+from app.schemas.question import QuestionCreate, QuestionRead, QuestionTeacherRead, QuestionUpdate
+from app.repositories import question_repo
 
 router = APIRouter()
 
@@ -38,9 +42,7 @@ async def create_question(
         material_urls=payload.material_urls,
         choices=[c.model_dump() for c in (payload.choices or [])] if payload.choices else None,
     )
-    await delete_pattern(f"questions:test:{payload.test_id}:*")
-    await delete_pattern(f"tests:content:{payload.test_id}")
-    await delete_pattern(f"test:{payload.test_id}:summary*")
+    await bump_cache_namespace(NS_QUESTIONS, NS_TEST_CONTENT, NS_TEST_SUMMARY)
     return q
 
 
@@ -54,7 +56,8 @@ async def list_questions_for_test(
 ):
     test = await get_visible_test(db, test_id, current_user)
 
-    cache_key = cache_key_question_list(test_id=test_id, limit=limit, offset=offset)
+    version = await get_cache_namespace_version(NS_QUESTIONS)
+    cache_key = cache_key_question_list(test_id=test_id, limit=limit, offset=offset, version=version)
     if test.published:
         cached = await get(cache_key)
         if cached is not None:
@@ -93,7 +96,21 @@ async def delete_question(
     await get_manageable_test(db, question.test_id, current_user)
     await question_repo.delete_question(db, question_id)
     if test_id is not None:
-        await delete_pattern(f"questions:test:{test_id}:*")
-        await delete_pattern(f"tests:content:{test_id}")
-        await delete_pattern(f"test:{test_id}:summary*")
+        await bump_cache_namespace(NS_QUESTIONS, NS_TEST_CONTENT, NS_TEST_SUMMARY)
     return {}
+
+
+@router.patch("/{question_id}", response_model=QuestionTeacherRead, status_code=status.HTTP_200_OK)
+async def update_question(
+    question_id: int,
+    payload: QuestionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("teacher", "admin")),
+):
+    question = await question_repo.get_question_with_choices(db, question_id)
+    if question is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
+    await get_manageable_test(db, question.test_id, current_user)
+    updated = await question_repo.update_question(db, question_id, **payload.model_dump(exclude_unset=True))
+    await bump_cache_namespace(NS_QUESTIONS, NS_TEST_CONTENT, NS_TEST_SUMMARY)
+    return updated

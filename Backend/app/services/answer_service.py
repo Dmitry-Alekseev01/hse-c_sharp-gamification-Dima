@@ -15,7 +15,7 @@ from app.repositories import answer_repo, analytics_repo, test_attempt_repo
 from app.models.answer import Answer
 from app.models.choice import Choice
 from app.models.question import Question
-from app.cache.redis_cache import get_redis_client, delete_pattern
+from app.cache.redis_cache import NS_LEADERBOARD, NS_TEST_SUMMARY, bump_cache_namespace, get_redis_client
 
 
 async def submit_answer(session, user_id: int, test_id: int, question_id: int, payload: str, attempt_id: int | None = None):
@@ -94,9 +94,7 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
 
     async def invalidate_after_commit() -> None:
         try:
-            await delete_pattern("leaderboard:top:*")
-            await delete_pattern(f"test:{test_id}:summary*")
-            await delete_pattern(f"user:{user_id}:analytics*")
+            await bump_cache_namespace(NS_LEADERBOARD, NS_TEST_SUMMARY)
         except Exception:
             pass
 
@@ -137,9 +135,7 @@ async def manual_grade_open_answer(session, answer_id: int, grader_id: int, scor
                 await test_attempt_repo.refresh_attempt_scores(session, attempt)
 
         try:
-            await delete_pattern("leaderboard:top:*")
-            await delete_pattern(f"test:{answer.test_id}:summary*")
-            await delete_pattern(f"user:{answer.user_id}:analytics*")
+            await bump_cache_namespace(NS_LEADERBOARD, NS_TEST_SUMMARY)
         except Exception:
             pass
 

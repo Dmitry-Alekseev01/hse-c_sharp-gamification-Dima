@@ -12,6 +12,7 @@ class TestAttempt(Base):
     test_id = Column(Integer, ForeignKey("tests.id"), nullable=False, index=True)
     status = Column(String(50), nullable=False, default="in_progress")
     score = Column(Float, nullable=True)
+    manual_score = Column(Float, nullable=True)
     max_score = Column(Float, nullable=True)
     time_spent_seconds = Column(Integer, nullable=True)
     started_at = Column(DateTime, nullable=False, server_default=func.now())

@@ -34,6 +34,20 @@ async def get_active_attempt(session, user_id: int, test_id: int) -> TestAttempt
     return res.scalars().first()
 
 
+async def get_latest_attempt_for_user_test(session, user_id: int, test_id: int) -> TestAttempt | None:
+    stmt = (
+        select(TestAttempt)
+        .where(
+            TestAttempt.user_id == user_id,
+            TestAttempt.test_id == test_id,
+        )
+        .order_by(TestAttempt.started_at.desc(), TestAttempt.id.desc())
+        .limit(1)
+    )
+    res = await session.execute(stmt)
+    return res.scalars().first()
+
+
 async def list_attempts_for_user(session, user_id: int, test_id: int | None = None):
     stmt = select(TestAttempt).where(TestAttempt.user_id == user_id).order_by(TestAttempt.started_at.desc(), TestAttempt.id.desc())
     if test_id is not None:
@@ -62,8 +76,15 @@ async def refresh_attempt_scores(session, attempt: TestAttempt) -> TestAttempt:
     max_score_stmt = select(func.coalesce(func.sum(Question.points), 0)).where(Question.test_id == attempt.test_id)
     max_score_value = await session.scalar(max_score_stmt)
 
-    attempt.score = float(score_value or 0)
+    computed_score = float(score_value or 0)
+    attempt.score = float(attempt.manual_score) if attempt.manual_score is not None else computed_score
     attempt.max_score = float(max_score_value or 0)
     await session.flush()
     await session.refresh(attempt)
     return attempt
+
+
+async def set_manual_score(session, attempt: TestAttempt, score: float) -> TestAttempt:
+    attempt.manual_score = float(score)
+    await session.flush()
+    return await refresh_attempt_scores(session, attempt)
