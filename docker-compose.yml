@@ -36,8 +36,6 @@ services:
         condition: service_healthy
     volumes:
       - ./Backend:/app
-    # command: ["sh", "/app/start.sh"]
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live')"]
       interval: 5s
@@ -60,7 +58,7 @@ services:
         condition: service_healthy
     volumes:
       - ./Backend:/app
-    command: ["sh", "/app/scripts/start_worker.sh"]
+    command: ["python", "-u", "-m", "app.tasks.worker"]
 
   frontend:
     build:

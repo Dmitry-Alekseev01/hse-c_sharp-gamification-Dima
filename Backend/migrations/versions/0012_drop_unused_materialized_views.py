@@ -1,6 +1,6 @@
 """drop unused materialized views
 
-Revision ID: 0012_drop_unused_materialized_views
+Revision ID: 0012_drop_unused_mvs
 Revises: 0011_drop_material_legacy_fields
 Create Date: 2026-04-07 20:00:00.000000
 """
@@ -8,7 +8,7 @@ Create Date: 2026-04-07 20:00:00.000000
 from alembic import op
 
 
-revision = "0012_drop_unused_materialized_views"
+revision = "0012_drop_unused_mvs"
 down_revision = "0011_drop_material_legacy_fields"
 branch_labels = None
 depends_on = None
