@@ -38,3 +38,18 @@ Async backend for the learning platform (FastAPI + PostgreSQL + Redis + Alembic)
 - Redis is used for caching and rate limiting.
 - Readiness probe returns `503` when DB or Redis is unavailable.
 - Schema changes are managed through Alembic migrations.
+
+## AI Gamification (Backend)
+
+- Feature flag: `AI_GAMIFICATION_ENABLED=true`
+- Required secret: `OPENROUTER_API_KEY`
+- Main flow: `POST /api/v1/ai/gamify` -> poll `GET /api/v1/ai/gamify/{job_id}` -> `POST /api/v1/ai/gamify/{job_id}/apply`
+- Admin ops endpoint: `GET /api/v1/ai/ops/metrics`
+- Detailed documentation: `docs/ai-gamification.md`
+- Reliability behavior:
+  - queue retry + DLQ for provider failures;
+  - semantic fallback when draft is formally valid JSON but content is empty;
+  - metric `jobs_semantic_fallback_used` tracks fallback activation frequency.
+- Prompting behavior:
+  - rewrites assignment text into a gamified/anime-style narrative;
+  - keeps original assignment logic and numeric constraints unchanged.
