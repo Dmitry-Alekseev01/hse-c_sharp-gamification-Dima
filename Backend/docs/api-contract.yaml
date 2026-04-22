@@ -258,6 +258,34 @@ components:
         limit: { type: integer }
         offset: { type: integer }
 
+    UserRewardRead:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        reward_type: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+        source_type: { type: string }
+        source_ref: { type: string, nullable: true }
+        earned_at: { type: string, format: date-time }
+
+    UserUnlockRead:
+      type: object
+      description: Cosmetic reward-condition status; does not grant API/content access.
+      properties:
+        reward_code: { type: string }
+        reward_title: { type: string }
+        source_type: { type: string }
+        source_code: { type: string, nullable: true }
+        min_level_required: { type: integer, nullable: true }
+        is_eligible: { type: boolean }
+        is_unlocked: { type: boolean }
+        earned_at: { type: string, format: date-time, nullable: true }
+
     ChallengeCreate:
       type: object
       required: [code, title, period_type, event_type, target_value]
@@ -1230,6 +1258,30 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PointsLedgerPageRead' }
+
+  /api/v1/analytics/me/rewards:
+    get:
+      summary: Current user reward inventory (cosmetic)
+      description: Rewards are profile/game UX entities and do not affect access control.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserRewardRead' }
+
+  /api/v1/analytics/me/unlocks:
+    get:
+      summary: Current user reward-condition status (cosmetic)
+      description: Eligibility/unlocked here is only for reward issuance, not content/level gating.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserUnlockRead' }
 
   /api/v1/analytics/challenges:
     post:

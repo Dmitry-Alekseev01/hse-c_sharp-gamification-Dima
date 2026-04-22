@@ -18,6 +18,7 @@ from app.models.test_attempt import TestAttempt
 from app.models.user import User
 from app.models.user_achievement import UserAchievement
 from app.repositories import level_repo
+from app.services import reward_service
 
 
 DEFAULT_ACHIEVEMENT_DEFINITIONS = [
@@ -70,15 +71,14 @@ async def get_analytics_for_user(session: AsyncSession, user_id: int) -> Optiona
     return res.scalars().first()
 
 
-def _recalculate_streak(last_active: datetime | None, current_streak: int, now: datetime) -> int:
+def _recalculate_streak(last_active: datetime | None, previous_streak: int, now: datetime) -> int:
     if last_active is None:
         return 1
-    last_date = last_active.date()
-    current_date = now.date()
-    if last_date == current_date:
-        return max(int(current_streak or 0), 1)
-    if last_date == current_date - timedelta(days=1):
-        return max(int(current_streak or 0), 0) + 1
+    if last_active.date() == now.date():
+        return max(int(previous_streak or 0), 1)
+    day_gap = (now.date() - last_active.date()).days
+    if day_gap <= 1:
+        return max(int(previous_streak or 0), 0) + 1
     return 1
 
 
@@ -246,6 +246,7 @@ async def apply_points_transaction(
         )
 
     await _award_achievements_if_eligible(session, user_id=user_id, analytics=analytics, source_event=reason_code)
+    await reward_service.sync_user_rewards(session, user_id)
     await session.flush()
     return analytics
 

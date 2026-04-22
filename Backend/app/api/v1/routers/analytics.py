@@ -35,12 +35,14 @@ from app.schemas.analytics import (
     UserChallengeProgressRead,
     UserBriefRead,
     UserGamificationProgressRead,
+    UserRewardRead,
+    UserUnlockRead,
     UserPerformanceRead,
 )
 from app.schemas.level import LevelRead
 from app.repositories import analytics_repo, group_repo, level_repo, season_repo, test_repo, user_repo
 from app.models.user import User
-from app.services import challenge_service
+from app.services import challenge_service, reward_service
 from app.services.challenge_service import ChallengeClaimError
 
 router = APIRouter()
@@ -128,6 +130,22 @@ async def get_my_points_ledger(
         offset=offset,
     )
     return {"items": items, "limit": limit, "offset": offset}
+
+
+@router.get("/me/rewards", response_model=List[UserRewardRead], status_code=status.HTTP_200_OK)
+async def get_my_rewards(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await reward_service.list_user_rewards(db, current_user.id)
+
+
+@router.get("/me/unlocks", response_model=List[UserUnlockRead], status_code=status.HTTP_200_OK)
+async def get_my_unlocks(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await reward_service.list_user_unlocks(db, current_user.id)
 
 
 @router.post("/challenges", response_model=ChallengeRead, status_code=status.HTTP_201_CREATED)

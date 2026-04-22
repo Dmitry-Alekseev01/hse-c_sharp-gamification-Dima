@@ -21,3 +21,6 @@ from app.models import user_achievement  # noqa: F401
 from app.models import points_ledger  # noqa: F401
 from app.models import challenge  # noqa: F401
 from app.models import season  # noqa: F401
+from app.models import reward_definition  # noqa: F401
+from app.models import unlock_rule  # noqa: F401
+from app.models import user_reward  # noqa: F401

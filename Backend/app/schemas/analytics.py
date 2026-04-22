@@ -112,6 +112,29 @@ class PointsLedgerPageRead(BaseModel):
     offset: int
 
 
+class UserRewardRead(BaseModel):
+    id: int
+    code: str
+    title: str
+    description: str | None
+    reward_type: str
+    payload: dict[str, object]
+    source_type: str
+    source_ref: str | None
+    earned_at: datetime
+
+
+class UserUnlockRead(BaseModel):
+    reward_code: str
+    reward_title: str
+    source_type: str
+    source_code: str | None
+    min_level_required: int | None
+    is_eligible: bool
+    is_unlocked: bool
+    earned_at: datetime | None
+
+
 class UserGamificationProgressRead(BaseModel):
     user_id: int
     username: str

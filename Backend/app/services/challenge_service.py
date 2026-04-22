@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.points_ledger import PointsLedger
 from app.repositories import analytics_repo, challenge_repo
+from app.services import reward_service
 
 
 class ChallengePeriodType(str, Enum):
@@ -267,6 +268,7 @@ async def claim_challenge(
         reward_points=float(challenge.reward_points or 0.0),
         ledger_entry_id=int(ledger_entry_id) if ledger_entry_id is not None else None,
     )
+    await reward_service.sync_user_rewards(session, user_id)
     await session.flush()
     return {
         "challenge_id": challenge_id,
