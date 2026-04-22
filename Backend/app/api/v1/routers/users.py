@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.security import get_current_user, require_roles
-from app.schemas.user import AdminUserCreate, UserRead, UserRoleUpdate
+from app.schemas.user import AdminUserCreate, UserProfileUpdate, UserRead, UserRoleUpdate
 from app.services import user_service
 from app.repositories import user_repo
 from app.models.user import User as UserModel
@@ -52,6 +52,26 @@ async def list_users(
     return users
 
 
+@router.patch("/me", response_model=UserRead, status_code=status.HTTP_200_OK)
+async def update_my_profile(
+    payload: UserProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    try:
+        user = await user_service.update_user_profile(
+            db,
+            current_user.id,
+            username=payload.username,
+            full_name=payload.full_name,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return user
+
+
 @router.get("/{user_id}", response_model=UserRead)
 async def get_user(
     user_id: int,
@@ -66,6 +86,27 @@ async def get_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if current_user.id != user_id and current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    return user
+
+
+@router.patch("/{user_id}", response_model=UserRead, status_code=status.HTTP_200_OK)
+async def update_user_profile_by_admin(
+    user_id: int,
+    payload: UserProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: UserModel = Depends(require_roles("admin")),
+):
+    try:
+        user = await user_service.update_user_profile(
+            db,
+            user_id,
+            username=payload.username,
+            full_name=payload.full_name,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return user
 
 

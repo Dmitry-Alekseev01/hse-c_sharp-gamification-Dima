@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import model_validator
 
 
 UserRole = Literal["user", "teacher", "admin"]
@@ -24,6 +25,19 @@ class AdminUserCreate(UserCreate):
 
 class UserRoleUpdate(BaseModel):
     role: UserRole
+
+
+class UserProfileUpdate(BaseModel):
+    username: str | None = None
+    full_name: str | None = None
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "UserProfileUpdate":
+        if self.username is None and self.full_name is None:
+            raise ValueError("At least one field must be provided")
+        if self.username is not None and not self.username.strip():
+            raise ValueError("username must not be empty")
+        return self
 
 
 class UserRead(BaseModel):

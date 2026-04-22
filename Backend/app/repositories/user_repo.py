@@ -31,3 +31,19 @@ async def create_user(
 
 async def get_user_by_id(session, user_id: int):
     return await session.get(User, user_id)
+
+
+async def update_user_profile(
+    session,
+    user: User,
+    *,
+    username: str | None = None,
+    full_name: str | None = None,
+):
+    if username is not None:
+        user.username = username
+    if full_name is not None:
+        user.full_name = full_name
+    await session.flush()
+    await session.refresh(user)
+    return user

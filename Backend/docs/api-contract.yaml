@@ -43,6 +43,12 @@ components:
         full_name: { type: string, nullable: true }
         role: { type: string, enum: [user, teacher, admin] }
 
+    UserProfileUpdate:
+      type: object
+      properties:
+        username: { type: string, nullable: true }
+        full_name: { type: string, nullable: true }
+
     MaterialRead:
       type: object
       properties:
@@ -730,6 +736,93 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UserRead' }
+
+  /api/v1/users:
+    get:
+      summary: List users (admin)
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, default: 100 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserRead' }
+        '403': { description: Admin role required }
+    post:
+      summary: Create user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/UserCreate'
+              properties:
+                role: { type: string, enum: [user, teacher, admin] }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRead' }
+        '400': { description: Validation or uniqueness error }
+        '403': { description: Admin role required }
+
+  /api/v1/users/me:
+    patch:
+      summary: Update current user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserProfileUpdate' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRead' }
+        '400': { description: Validation or uniqueness error }
+        '401': { description: Unauthorized }
+
+  /api/v1/users/{user_id}:
+    get:
+      summary: Get user by id (self or admin)
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRead' }
+        '403': { description: Insufficient permissions }
+        '404': { description: User not found }
+    patch:
+      summary: Update user profile by id (admin)
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserProfileUpdate' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRead' }
+        '400': { description: Validation or uniqueness error }
+        '403': { description: Admin role required }
+        '404': { description: User not found }
 
   /api/v1/materials:
     get:
