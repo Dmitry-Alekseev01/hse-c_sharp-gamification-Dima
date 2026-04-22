@@ -42,6 +42,7 @@ components:
         username: { type: string }
         full_name: { type: string, nullable: true }
         role: { type: string, enum: [user, teacher, admin] }
+        created_at: { type: string, format: date-time, nullable: true }
 
     UserProfileUpdate:
       type: object
