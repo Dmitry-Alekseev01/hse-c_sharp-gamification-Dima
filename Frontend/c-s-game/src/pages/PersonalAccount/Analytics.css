@@ -1,11 +1,11 @@
 .analytics-page {
-  background: white;
-  border-radius: 16px;
-  padding: 40px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
+  background: linear-gradient(135deg, #eef2f7 0%, #d9e2ec 100%) !important;
+  min-height: 100vh;
+  padding: 40px 20px;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 .analytics-header {
@@ -19,8 +19,8 @@
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: linear-gradient(135deg, #667eea 0%, #5a67d8 100%) !important;
+  color: white !important;
   border: none;
   padding: 12px 24px;
   border-radius: 8px;
@@ -34,7 +34,8 @@
 
 .back-button:hover {
   transform: translateY(-50%) translateX(-3px);
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  background: linear-gradient(135deg, #5a67d8 0%, #4c51bf 100%);
+  box-shadow: 0 4px 15px rgba(90, 103, 216, 0.4);
 }
 
 .analytics-header h1 {
