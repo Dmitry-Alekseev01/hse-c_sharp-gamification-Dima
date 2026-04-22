@@ -484,6 +484,7 @@ async def _create_tests_with_questions(
     materials: list[Material],
 ) -> list[Test]:
     tests: list[Test] = []
+    deadline_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=365)
     for idx, item in enumerate(_test_data(materials), start=1):
         required_level_id = levels["lvl1"].id if idx <= 2 else levels["lvl2"].id
         test = Test(
@@ -491,6 +492,7 @@ async def _create_tests_with_questions(
             description=item["description"],
             max_score=item["max_score"],
             published=True,
+            deadline=deadline_at,
             material_id=item["material"].id,
             author_id=teacher.id,
             required_level_id=required_level_id,
