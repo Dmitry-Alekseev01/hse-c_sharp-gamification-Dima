@@ -1,4 +1,3 @@
-// src/api/api.js
 const API_BASE_URL = '/api/v1';
 
 export const setToken = (token) => {
@@ -30,7 +29,6 @@ async function authFetch(url, options = {}) {
   return response.json();
 }
 
-// ========== Аутентификация ==========
 export const fetchUserProfile = async () => {
   const profile = await authFetch('/auth/me');
   if (profile?.username) localStorage.setItem('userEmail', profile.username);
@@ -50,9 +48,7 @@ export const loginUser = async (username, password) => {
   localStorage.setItem('userEmail', username);
   try {
     await fetchUserProfile();
-  } catch (_) {
-    // игнорируем ошибку загрузки профиля при логине
-  }
+  } catch (_) {}
   return data;
 };
 
@@ -72,7 +68,6 @@ export const logoutUser = () => {
   window.location.href = '/';
 };
 
-// ========== Материалы ==========
 function adaptMaterial(apiMaterial) {
   let content_text = '';
   let content_url = null;
@@ -106,7 +101,6 @@ export const fetchMaterialById = async (id) => {
   return adaptMaterial(data);
 };
 
-// ========== Тесты ==========
 export const fetchTests = async () => {
   return authFetch('/tests/');
 };
@@ -133,7 +127,6 @@ export const fetchUserAnswers = async (testId) => {
   return authFetch(`/answers/test/${testId}/`);
 };
 
-// ========== Аналитика ==========
 export const fetchUserProgress = async (userId) => {
   return authFetch(`/analytics/user/${userId}/progress/`);
 };
@@ -148,4 +141,9 @@ export const fetchOverview = async () => {
 
 export const fetchTestCompletedSummary = async (testId) => {
   return authFetch(`/analytics/test/${testId}/completed-summary/`);
+};
+
+// ========== Дорожная карта (уровни) ==========
+export const fetchLevels = async () => {
+  return authFetch('/levels/');
 };
