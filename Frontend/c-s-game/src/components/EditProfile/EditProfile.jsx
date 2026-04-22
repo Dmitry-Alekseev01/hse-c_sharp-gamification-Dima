@@ -1,21 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { fetchUserProfile, updateUserProfile, getToken } from '../../api/api';
 import { PERSONAL_ACCOUNT_ROUTE } from '../../routing/const';
 import './EditProfile.css';
 
 const EditProfile = () => {
   const navigate = useNavigate();
-  const [name, setName] = useState(localStorage.getItem('userName') || 'Дмитрий Иванов');
+  const [name, setName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!getToken()) {
+        navigate(PERSONAL_ACCOUNT_ROUTE);
+        return;
+      }
+      try {
+        const profile = await fetchUserProfile();
+        setName(profile.full_name || '');
+      } catch (err) {
+        setError(err.message);
+      }
+    };
+    loadProfile();
+  }, [navigate]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!name.trim()) {
+      setError('Имя не может быть пустым');
+      return;
+    }
     setIsSaving(true);
-    setTimeout(() => {
-      localStorage.setItem('userName', name);
-      setIsSaving(false);
+    setError('');
+    try {
+      const updated = await updateUserProfile(name);
+      localStorage.setItem('userName', updated.full_name);
       navigate(PERSONAL_ACCOUNT_ROUTE);
-    }, 500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -34,6 +61,7 @@ const EditProfile = () => {
               required
             />
           </div>
+          {error && <div className="error-message">{error}</div>}
           <div className="form-actions">
             <button type="submit" className="save-btn" disabled={isSaving}>
               {isSaving ? 'Сохранение...' : 'Сохранить'}
