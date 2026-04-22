@@ -90,28 +90,28 @@ async def _cleanup_demo_content(session: AsyncSession) -> None:
     demo_group_ids = list(
         (await session.execute(select(StudyGroup.id).where(StudyGroup.name.like(f"{DEMO_PREFIX}%")))).scalars().all()
     )
-    demo_level_ids = list(
-        (await session.execute(select(Level.id).where(Level.name.like(f"{DEMO_PREFIX}%")))).scalars().all()
-    )
-
     if demo_test_ids:
+        demo_question_ids = list(
+            (
+                await session.execute(select(Question.id).where(Question.test_id.in_(demo_test_ids)))
+            ).scalars().all()
+        )
         await session.execute(delete(Answer).where(Answer.test_id.in_(demo_test_ids)))
         await session.execute(delete(TestAttempt).where(TestAttempt.test_id.in_(demo_test_ids)))
+        if demo_question_ids:
+            await session.execute(delete(Choice).where(Choice.question_id.in_(demo_question_ids)))
+            await session.execute(delete(Question).where(Question.id.in_(demo_question_ids)))
         await session.execute(delete(material_test_links).where(material_test_links.c.test_id.in_(demo_test_ids)))
-        await session.execute(delete(Test).where(Test.id.in_(demo_test_ids)))
 
     if demo_material_ids:
         await session.execute(
             delete(material_test_links).where(material_test_links.c.material_id.in_(demo_material_ids))
         )
-        await session.execute(delete(Material).where(Material.id.in_(demo_material_ids)))
+        await session.execute(delete(MaterialBlock).where(MaterialBlock.material_id.in_(demo_material_ids)))
+        await session.execute(delete(MaterialAttachment).where(MaterialAttachment.material_id.in_(demo_material_ids)))
 
     if demo_group_ids:
         await session.execute(delete(GroupMembership).where(GroupMembership.group_id.in_(demo_group_ids)))
-        await session.execute(delete(StudyGroup).where(StudyGroup.id.in_(demo_group_ids)))
-
-    if demo_level_ids:
-        await session.execute(delete(Level).where(Level.id.in_(demo_level_ids)))
 
     if demo_user_ids:
         await session.execute(delete(UserAchievement).where(UserAchievement.user_id.in_(demo_user_ids)))
@@ -122,26 +122,27 @@ async def _cleanup_demo_content(session: AsyncSession) -> None:
 
 
 async def _create_demo_levels(session: AsyncSession) -> dict[str, Level]:
-    levels = [
-        Level(
-            name=f"{DEMO_PREFIX} Level 1",
-            required_points=0,
-            description="C# syntax basics",
-        ),
-        Level(
-            name=f"{DEMO_PREFIX} Level 2",
-            required_points=60,
-            description="OOP and interfaces",
-        ),
-        Level(
-            name=f"{DEMO_PREFIX} Level 3",
-            required_points=140,
-            description="Async and collections",
-        ),
+    level_specs = [
+        ("lvl1", f"{DEMO_PREFIX} Level 1", 0, "C# syntax basics"),
+        ("lvl2", f"{DEMO_PREFIX} Level 2", 60, "OOP and interfaces"),
+        ("lvl3", f"{DEMO_PREFIX} Level 3", 140, "Async and collections"),
     ]
-    session.add_all(levels)
+    result: dict[str, Level] = {}
+    for key, name, required_points, description in level_specs:
+        level = (await session.execute(select(Level).where(Level.name == name))).scalars().first()
+        if level is None:
+            level = Level(
+                name=name,
+                required_points=required_points,
+                description=description,
+            )
+            session.add(level)
+        else:
+            level.required_points = required_points
+            level.description = description
+        result[key] = level
     await session.flush()
-    return {"lvl1": levels[0], "lvl2": levels[1], "lvl3": levels[2]}
+    return result
 
 
 def _material_data() -> list[dict]:
@@ -442,16 +443,24 @@ async def _create_materials(
 ) -> list[Material]:
     materials: list[Material] = []
     for item in _material_data():
-        material = Material(
-            title=item["title"],
-            material_type="lesson",
-            status="published",
-            description=item["description"],
-            author_id=teacher.id,
-            required_level_id=levels[item["required_level_key"]].id,
-        )
-        material.blocks = [
+        material = (await session.execute(select(Material).where(Material.title == item["title"]))).scalars().first()
+        if material is None:
+            material = Material(title=item["title"])
+            session.add(material)
+            await session.flush()
+
+        material.material_type = "lesson"
+        material.status = "published"
+        material.description = item["description"]
+        material.author_id = teacher.id
+        material.required_level_id = levels[item["required_level_key"]].id
+        await session.execute(delete(MaterialBlock).where(MaterialBlock.material_id == material.id))
+        await session.execute(delete(MaterialAttachment).where(MaterialAttachment.material_id == material.id))
+        await session.execute(delete(material_test_links).where(material_test_links.c.material_id == material.id))
+
+        blocks = [
             MaterialBlock(
+                material_id=material.id,
                 block_type=block["block_type"],
                 title=block.get("title"),
                 body=block.get("body"),
@@ -460,8 +469,9 @@ async def _create_materials(
             )
             for block in item["blocks"]
         ]
-        material.attachments = [
+        attachments = [
             MaterialAttachment(
+                material_id=material.id,
                 title=attachment["title"],
                 file_url=attachment["file_url"],
                 file_kind=attachment["file_kind"],
@@ -470,7 +480,8 @@ async def _create_materials(
             )
             for attachment in item["attachments"]
         ]
-        session.add(material)
+        session.add_all(blocks)
+        session.add_all(attachments)
         materials.append(material)
     await session.flush()
     return materials
@@ -487,19 +498,36 @@ async def _create_tests_with_questions(
     deadline_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=365)
     for idx, item in enumerate(_test_data(materials), start=1):
         required_level_id = levels["lvl1"].id if idx <= 2 else levels["lvl2"].id
-        test = Test(
-            title=item["title"],
-            description=item["description"],
-            max_score=item["max_score"],
-            published=True,
-            deadline=deadline_at,
-            material_id=item["material"].id,
-            author_id=teacher.id,
-            required_level_id=required_level_id,
+        test = (await session.execute(select(Test).where(Test.title == item["title"]))).scalars().first()
+        if test is None:
+            test = Test(title=item["title"])
+            session.add(test)
+            await session.flush()
+
+        test.description = item["description"]
+        test.max_score = item["max_score"]
+        test.published = True
+        test.deadline = deadline_at
+        test.material_id = item["material"].id
+        test.author_id = teacher.id
+        test.required_level_id = required_level_id
+
+        existing_question_ids = list(
+            (await session.execute(select(Question.id).where(Question.test_id == test.id))).scalars().all()
         )
-        test.materials = [item["material"]]
-        test.questions = [
+        await session.execute(delete(Answer).where(Answer.test_id == test.id))
+        await session.execute(delete(TestAttempt).where(TestAttempt.test_id == test.id))
+        if existing_question_ids:
+            await session.execute(delete(Choice).where(Choice.question_id.in_(existing_question_ids)))
+            await session.execute(delete(Question).where(Question.id.in_(existing_question_ids)))
+        await session.execute(delete(material_test_links).where(material_test_links.c.test_id == test.id))
+        await session.execute(
+            material_test_links.insert().values(material_id=item["material"].id, test_id=test.id)
+        )
+
+        questions = [
             Question(
+                test_id=test.id,
                 text=question["text"],
                 points=question["points"],
                 is_open_answer=question["is_open_answer"],
@@ -515,16 +543,23 @@ async def _create_tests_with_questions(
             )
             for question in item["questions"]
         ]
-        session.add(test)
+        session.add_all(questions)
         tests.append(test)
     await session.flush()
     return tests
 
 
 async def _create_demo_group(session: AsyncSession, *, teacher: User, student: User) -> StudyGroup:
-    group = StudyGroup(name=DEMO_GROUP_NAME, teacher_id=teacher.id)
-    group.memberships = [GroupMembership(user_id=student.id)]
-    session.add(group)
+    group = (await session.execute(select(StudyGroup).where(StudyGroup.name == DEMO_GROUP_NAME))).scalars().first()
+    if group is None:
+        group = StudyGroup(name=DEMO_GROUP_NAME, teacher_id=teacher.id)
+        session.add(group)
+        await session.flush()
+    else:
+        group.teacher_id = teacher.id
+        await session.execute(delete(GroupMembership).where(GroupMembership.group_id == group.id))
+
+    session.add(GroupMembership(group_id=group.id, user_id=student.id))
     await session.flush()
     return group
 
@@ -554,11 +589,32 @@ async def _seed_student_attempt_and_answers(
     session.add(attempt)
     await session.flush()
 
-    q1 = first_test.questions[0]
-    q2 = first_test.questions[1]
-    q3 = first_test.questions[2]
-    q1_correct = next(choice for choice in q1.choices if choice.is_correct)
-    q2_wrong = next(choice for choice in q2.choices if not choice.is_correct)
+    fresh_questions = list(
+        (
+            await session.execute(
+                select(Question).where(Question.test_id == first_test.id).order_by(Question.id.asc())
+            )
+        ).scalars().all()
+    )
+    if len(fresh_questions) < 3:
+        raise RuntimeError("Demo seed expected at least 3 questions in the first test")
+
+    q1 = fresh_questions[0]
+    q2 = fresh_questions[1]
+    q3 = fresh_questions[2]
+
+    q1_correct = (
+        await session.execute(
+            select(Choice).where(Choice.question_id == q1.id, Choice.is_correct.is_(True)).limit(1)
+        )
+    ).scalars().first()
+    q2_wrong = (
+        await session.execute(
+            select(Choice).where(Choice.question_id == q2.id, Choice.is_correct.is_(False)).limit(1)
+        )
+    ).scalars().first()
+    if q1_correct is None or q2_wrong is None:
+        raise RuntimeError("Demo seed expected both correct and wrong choices in first test")
 
     answers = [
         Answer(
