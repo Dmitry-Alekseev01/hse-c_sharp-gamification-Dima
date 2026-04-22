@@ -19,17 +19,23 @@ async def test_sync_user_rewards_grants_achievement_and_level_rewards(db):
     db.add(user)
     await db.flush()
 
-    achievement = AchievementDefinition(
-        code="first_steps",
-        title="First Steps",
-        description="Complete first attempt",
-        reward="badge",
-        criteria_type="completed_attempts",
-        threshold_value=1,
-        is_active=True,
-    )
-    db.add(achievement)
-    await db.flush()
+    achievement = (
+        await db.execute(
+            select(AchievementDefinition).where(AchievementDefinition.code == "first_steps")
+        )
+    ).scalars().first()
+    if achievement is None:
+        achievement = AchievementDefinition(
+            code="first_steps",
+            title="First Steps",
+            description="Complete first attempt",
+            reward="badge",
+            criteria_type="completed_attempts",
+            threshold_value=1,
+            is_active=True,
+        )
+        db.add(achievement)
+        await db.flush()
 
     db.add(UserAchievement(user_id=user.id, achievement_id=achievement.id, source_event="unit_test"))
     db.add(
