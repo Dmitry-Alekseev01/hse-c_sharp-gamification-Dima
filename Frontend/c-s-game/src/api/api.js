@@ -143,7 +143,13 @@ export const fetchTestCompletedSummary = async (testId) => {
   return authFetch(`/analytics/test/${testId}/completed-summary/`);
 };
 
-// ========== Дорожная карта (уровни) ==========
 export const fetchLevels = async () => {
   return authFetch('/levels/');
+};
+
+export const updateUserProfile = async (fullName) => {
+  return authFetch('/users/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ full_name: fullName }),
+  });
 };
