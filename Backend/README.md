@@ -53,3 +53,24 @@ Async backend for the learning platform (FastAPI + PostgreSQL + Redis + Alembic)
 - Prompting behavior:
   - rewrites assignment text into a gamified/anime-style narrative;
   - keeps original assignment logic and numeric constraints unchanged.
+
+## Admin Panel
+
+- URL: `http://localhost:8000/admin`
+- Access: only users with `role=admin`
+- Config:
+  - `ADMIN_ENABLED` - turn admin panel on/off;
+  - `ADMIN_BASE_URL` - custom panel path (default `/admin`);
+  - `ADMIN_SESSION_MAX_AGE_SECONDS`, `ADMIN_SESSION_HTTPS_ONLY`, `ADMIN_SESSION_SAME_SITE` - admin session cookie policy.
+- Security model:
+  - admin session is isolated from API bearer auth;
+  - non-admin users cannot authenticate to the panel.
+- Current scope:
+  - `Users` view is read-only;
+  - `Levels`, `Materials`, `Tests`, `Questions`, `Choices` support CRUD with form validation;
+  - operational entities (`Analytics`, `Answers`, `Attempts`, `Points Ledger`, `AI Jobs`,
+    `Challenges`, `Rewards`, `Seasons`, `Leaderboard snapshots`, groups) are read-only.
+- Safety:
+  - batch actions are disabled in admin views;
+  - sensitive user field `password_hash` is not exposed in the panel;
+  - create/edit/delete operations are logged via `admin_audit` structured logs.

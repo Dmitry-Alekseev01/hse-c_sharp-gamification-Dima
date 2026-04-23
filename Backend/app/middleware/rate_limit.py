@@ -14,11 +14,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if request.method == "OPTIONS" or not path.startswith("/api/"):
+        admin_base = settings.admin_base_url.rstrip("/") or "/admin"
+        is_admin_path = path == admin_base or path.startswith(f"{admin_base}/")
+        if request.method == "OPTIONS" or (not path.startswith("/api/") and not is_admin_path):
             return await call_next(request)
 
         identifier = self._get_identifier(request)
-        scope, limit = self._get_scope_and_limit(path)
+        scope, limit = self._get_scope_and_limit(path, request.method)
         window = settings.rate_limit_window_seconds
         bucket = int(time.time() // window)
         key = f"rate:{scope}:{identifier}:{bucket}"
@@ -51,15 +53,29 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _get_identifier(request: Request) -> str:
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+
         forwarded_for = request.headers.get("x-forwarded-for")
         if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
+            parts = [part.strip() for part in forwarded_for.split(",") if part.strip()]
+            if parts:
+                # Use the last hop in XFF chain; it is less spoofable when request
+                # passes through trusted reverse proxy appending client addresses.
+                return parts[-1]
+
         if request.client and request.client.host:
             return request.client.host
         return "unknown"
 
     @staticmethod
-    def _get_scope_and_limit(path: str) -> tuple[str, int]:
+    def _get_scope_and_limit(path: str, method: str) -> tuple[str, int]:
+        admin_base = settings.admin_base_url.rstrip("/") or "/admin"
+        if path == f"{admin_base}/login" and method.upper() == "POST":
+            return "admin_login", settings.rate_limit_admin_login
+        if path == admin_base or path.startswith(f"{admin_base}/"):
+            return "admin", settings.rate_limit_admin
         if path.startswith("/api/v1/auth/"):
             return "auth", settings.rate_limit_auth
         if path.startswith("/api/v1/answers/"):

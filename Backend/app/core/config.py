@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     rate_limit_answers: int = Field(180)
     rate_limit_analytics: int = Field(120)
     rate_limit_ai: int = Field(30)
+    rate_limit_admin: int = Field(120)
+    rate_limit_admin_login: int = Field(10)
+
+    # Admin panel
+    admin_enabled: bool = Field(True)
+    admin_base_url: str = Field("/admin")
+    admin_session_max_age_seconds: int = Field(60 * 60 * 8)
+    admin_session_https_only: bool = Field(False)
+    admin_session_same_site: str = Field("lax")
+    admin_login_max_attempts: int = Field(5)
+    admin_login_window_seconds: int = Field(300)
+    admin_login_block_seconds: int = Field(900)
 
     # AI / OpenRouter
     ai_gamification_enabled: bool = Field(False)
@@ -103,6 +115,12 @@ class Settings(BaseSettings):
     def get_openrouter_fallback_models(self) -> list[str]:
         models = [m.strip() for m in self.openrouter_fallback_models.split(",") if m.strip()]
         return models
+
+    def get_admin_session_same_site(self) -> str:
+        value = (self.admin_session_same_site or "").strip().lower()
+        if value in {"lax", "strict", "none"}:
+            return value
+        return "lax"
 
 
 settings = Settings()
