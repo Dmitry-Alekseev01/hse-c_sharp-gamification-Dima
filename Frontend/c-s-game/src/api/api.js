@@ -29,7 +29,6 @@ async function authFetch(url, options = {}) {
   return response.json();
 }
 
-// ========== Аутентификация ==========
 export const fetchUserProfile = async () => {
   const profile = await authFetch('/auth/me');
   if (profile?.username) localStorage.setItem('userEmail', profile.username);
@@ -50,7 +49,6 @@ export const loginUser = async (username, password) => {
   try {
     await fetchUserProfile();
   } catch (_) {
-    // игнорируем ошибку загрузки профиля при логине
   }
   return data;
 };
@@ -71,7 +69,6 @@ export const logoutUser = () => {
   window.location.href = '/';
 };
 
-// ========== Материалы ==========
 function adaptMaterial(apiMaterial) {
   let content_text = '';
   let content_url = null;
@@ -105,12 +102,10 @@ export const fetchMaterials = async () => {
 };
 
 export const fetchMaterialById = async (id) => {
-  // Убираем завершающий слеш, чтобы избежать редиректа 307
   const data = await authFetch(`/materials/${id}`);
   return adaptMaterial(data);
 };
 
-// ========== Тесты ==========
 export const fetchTests = async () => {
   return authFetch('/tests/');
 };
@@ -137,7 +132,6 @@ export const fetchUserAnswers = async (testId) => {
   return authFetch(`/answers/test/${testId}`);
 };
 
-// ========== Аналитика ==========
 export const fetchUserProgress = async (userId) => {
   return authFetch(`/analytics/user/${userId}/progress`);
 };
@@ -158,7 +152,6 @@ export const fetchLevels = async () => {
   return authFetch('/levels/');
 };
 
-// ========== Обновление профиля ==========
 export const updateUserProfile = async (fullName) => {
   return authFetch('/users/me', {
     method: 'PATCH',

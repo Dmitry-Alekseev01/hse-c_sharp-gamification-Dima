@@ -29,7 +29,6 @@ const Home = () => {
   const [activeTab, setActiveTab] = useState('roadmap');
   const [activeFilter, setActiveFilter] = useState('all');
 
-  // Преобразование процентов в 10-балльную шкалу
   const getAverageScoreIn10Scale = (percent) => {
     if (percent === undefined || percent === null) return '—';
     const score = (percent / 10).toFixed(1);

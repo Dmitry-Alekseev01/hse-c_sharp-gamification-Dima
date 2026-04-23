@@ -28,16 +28,13 @@ const TestDetails = () => {
         const content = await fetchTestContent(id);
         setTestData(content);
 
-        // Начинаем попытку
         const attempt = await startTestAttempt(id);
         setAttemptId(attempt.id);
 
-        // Если есть ограничение по времени, устанавливаем таймер
         if (content.test.time_limit_minutes) {
           setTimeLeft(content.test.time_limit_minutes * 60);
         }
 
-        // Инициализируем ответы
         const initialAnswers = {};
         content.questions.forEach((q) => {
           if (!q.is_open_answer) {
@@ -54,7 +51,12 @@ const TestDetails = () => {
         });
         setOpenAnswers(initialOpenAnswers);
       } catch (err) {
-        setError(err.message);
+        // Если тест уже завершён (409) или другая ошибка
+        if (err.message.includes('409') || err.message.includes('already completed')) {
+          setError('Этот тест уже завершён. Повторное прохождение невозможно.');
+        } else {
+          setError(err.message);
+        }
       } finally {
         setLoading(false);
       }
@@ -86,7 +88,6 @@ const TestDetails = () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
-      // Отправляем все ответы
       const allAnswers = [
         ...Object.entries(userAnswers).map(([qId, choiceId]) => ({
           questionId: parseInt(qId),
@@ -100,7 +101,6 @@ const TestDetails = () => {
       for (const ans of allAnswers) {
         await submitAnswer(parseInt(id), ans.questionId, ans.payload, attemptId);
       }
-      // Завершаем попытку
       await completeTestAttempt(attemptId);
       setTestSubmitted(true);
     } catch (err) {

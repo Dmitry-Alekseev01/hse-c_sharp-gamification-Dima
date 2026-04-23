@@ -14,17 +14,16 @@ const Tests = () => {
       try {
         const data = await fetchTests();
         setTests(data);
-        // Загружаем результаты по каждому тесту (если есть)
         const scoresMap = {};
         await Promise.all(
           data.map(async (test) => {
             try {
               const answers = await fetchUserAnswers(test.id);
-              // Предположим, что ответы приходят с полем score
-              const userScore = answers.reduce((sum, ans) => sum + (ans.score || 0), 0);
-              scoresMap[test.id] = { userScore, maxScore: test.max_score };
+              if (answers && answers.length > 0) {
+                const userScore = answers.reduce((sum, ans) => sum + (ans.score || 0), 0);
+                scoresMap[test.id] = { userScore, maxScore: test.max_score };
+              }
             } catch (e) {
-              // Если нет ответов или ошибка, игнорируем
             }
           })
         );
@@ -63,7 +62,7 @@ const Tests = () => {
   const getStatusBadge = (test) => {
     const now = new Date();
     const deadlineDate = test.deadline ? new Date(test.deadline) : null;
-    const hasCompleted = userScores[test.id]?.userScore !== undefined;
+    const hasCompleted = userScores[test.id] !== undefined;
     if (hasCompleted) return { text: 'Завершен', class: 'status-completed' };
     if (deadlineDate && now > deadlineDate) return { text: 'Просрочен', class: 'status-overdue' };
     return { text: 'Не начат', class: 'status-not-started' };
@@ -105,7 +104,8 @@ const Tests = () => {
       <div className="tests-grid">
         {tests.map((test) => {
           const statusBadge = getStatusBadge(test);
-          const userScore = userScores[test.id]?.userScore;
+          const scoreInfo = userScores[test.id];
+          const userScore = scoreInfo?.userScore;
           const maxScore = test.max_score;
 
           return (
@@ -164,10 +164,9 @@ const Tests = () => {
               <div className="test-footer">
                 <div className="test-actions">
                   {userScore !== undefined ? (
-                    <>
-                      <button className="action-btn view-results-btn">Посмотреть результаты</button>
-                      <button className="action-btn retry-btn">Пройти заново</button>
-                    </>
+                    <Link to={`/test/${test.id}`} className="action-btn retry-btn">
+                      Пройти заново
+                    </Link>
                   ) : (
                     <Link to={`/test/${test.id}`} className="action-btn start-btn">
                       Начать тест
@@ -180,7 +179,7 @@ const Tests = () => {
         })}
       </div>
 
-      <div className="tests-info">{/* ... без изменений ... */}</div>
+      {/* Блок tests-info полностью удалён */}
     </div>
   );
 };
