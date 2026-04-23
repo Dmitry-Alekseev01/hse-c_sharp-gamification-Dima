@@ -21,7 +21,6 @@ const Navbar = () => {
     }
   }, []);
 
-  // Закрытие меню при клике вне его области
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {

@@ -28,7 +28,6 @@ const TestDetails = () => {
         const content = await fetchTestContent(id);
         setTestData(content);
 
-        // Попытка начать или продолжить тест
         const attempt = await startTestAttempt(id);
         setAttemptId(attempt.id);
 

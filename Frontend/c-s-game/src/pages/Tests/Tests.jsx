@@ -19,13 +19,11 @@ const Tests = () => {
           data.map(async (test) => {
             try {
               const answers = await fetchUserAnswers(test.id);
-              // Проверяем, что есть хотя бы один ответ
               if (answers && answers.length > 0) {
                 const userScore = answers.reduce((sum, ans) => sum + (ans.score || 0), 0);
                 scoresMap[test.id] = { userScore, maxScore: test.max_score };
               }
             } catch (e) {
-              // Нет ответов – тест не пройден
             }
           })
         );
@@ -68,12 +66,6 @@ const Tests = () => {
     if (hasCompleted) return { text: 'Завершен', class: 'status-completed' };
     if (deadlineDate && now > deadlineDate) return { text: 'Просрочен', class: 'status-overdue' };
     return { text: 'Не начат', class: 'status-not-started' };
-  };
-
-  const handleViewResults = (testId, userScore, maxScore) => {
-    const percent = Math.round((userScore / maxScore) * 100);
-    alert(`Ваш результат: ${userScore}/${maxScore} (${percent}%)`);
-    // Здесь можно открыть модальное окно или перейти на страницу результатов
   };
 
   if (loading) return <div className="loading">Загрузка тестов...</div>;
@@ -172,17 +164,9 @@ const Tests = () => {
               <div className="test-footer">
                 <div className="test-actions">
                   {userScore !== undefined ? (
-                    <>
-                      <button
-                        className="action-btn view-results-btn"
-                        onClick={() => handleViewResults(test.id, userScore, maxScore)}
-                      >
-                        Посмотреть результаты
-                      </button>
-                      <Link to={`/test/${test.id}`} className="action-btn retry-btn">
-                        Пройти заново
-                      </Link>
-                    </>
+                    <Link to={`/test/${test.id}`} className="action-btn retry-btn">
+                      Пройти заново
+                    </Link>
                   ) : (
                     <Link to={`/test/${test.id}`} className="action-btn start-btn">
                       Начать тест
@@ -195,7 +179,7 @@ const Tests = () => {
         })}
       </div>
 
-      <div className="tests-info">{/* ... */}</div>
+      {/* Блок tests-info полностью удалён */}
     </div>
   );
 };

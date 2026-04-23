@@ -28,16 +28,13 @@ const PersonalAccount = () => {
         return;
       }
       try {
-        // 1. Профиль пользователя
         const profileData = await fetchUserProfile();
-        console.log('Профиль пользователя:', profileData); // для отладки
+        console.log('Профиль пользователя:', profileData);
         setProfile(profileData);
 
-        // 2. Материалы
         const materials = await fetchMaterials();
         const totalMaterials = materials.length;
 
-        // 3. Тесты и ответы
         const tests = await fetchTests();
         const totalTests = tests.length;
         let completedTests = 0;
@@ -58,7 +55,6 @@ const PersonalAccount = () => {
               }
             }
           } catch (e) {
-            // игнорируем
           }
         }
         const averageScore = testsWithScore > 0 ? Math.round(totalScoreSum / testsWithScore) : 0;
@@ -80,7 +76,6 @@ const PersonalAccount = () => {
     loadData();
   }, []);
 
-  // Функция для получения даты регистрации из разных возможных полей
   const getRegistrationDate = (profile) => {
     if (!profile) return null;
     const dateString = profile.created_at || profile.registered_at || profile.date_joined || null;
@@ -106,7 +101,6 @@ const PersonalAccount = () => {
   const loginName = profile.username;
   const registrationDate = getRegistrationDate(profile);
 
-  // Отображаемые значения для панели аналитики
   const materialsDisplay = `0/${stats.totalMaterials}`;
   const testsDisplay = `${stats.completedTests}/${stats.totalTests}`;
   const progressDisplay = `${stats.overallProgress}%`;
