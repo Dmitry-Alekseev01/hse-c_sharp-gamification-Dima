@@ -3,6 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.access import ensure_teacher_or_admin_can_access_user
 from app.api.deps import get_db
 from app.cache.redis_cache import (
     LEADERBOARD_TTL,
@@ -40,7 +41,7 @@ from app.schemas.analytics import (
     UserPerformanceRead,
 )
 from app.schemas.level import LevelRead
-from app.repositories import analytics_repo, group_repo, level_repo, season_repo, test_repo, user_repo
+from app.repositories import analytics_repo, group_repo, level_repo, season_repo, test_repo
 from app.models.user import User
 from app.services import challenge_service, reward_service
 from app.services.challenge_service import ChallengeClaimError
@@ -58,25 +59,6 @@ def _assert_group_access(current_user: User, group) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
 
-async def _assert_student_access(
-    db: AsyncSession,
-    current_user: User,
-    user_id: int,
-) -> None:
-    user = await user_repo.get_user_by_id(db, user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    if current_user.role == "admin":
-        return
-    if current_user.role == "teacher":
-        if current_user.id == user_id:
-            return
-        if await group_repo.teacher_manages_user(db, current_user.id, user_id):
-            return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-
-
 @router.get("/user/{user_id}", response_model=AnalyticsRead, status_code=status.HTTP_200_OK)
 async def get_user_analytics(
     user_id: int,
@@ -86,8 +68,7 @@ async def get_user_analytics(
     """
     Return analytics for a given user (total points, tests taken, last active, current level etc).
     """
-    if current_user.id != user_id and current_user.role not in {"teacher", "admin"}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    await ensure_teacher_or_admin_can_access_user(db, current_user, user_id)
     analytics = await analytics_repo.get_user_analytics(db, user_id)
     if not analytics:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analytics not found for user")
@@ -100,8 +81,7 @@ async def get_user_progress(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.id != user_id and current_user.role not in {"teacher", "admin"}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    await ensure_teacher_or_admin_can_access_user(db, current_user, user_id)
     progress = await analytics_repo.get_gamification_progress(db, user_id)
     if progress is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -209,7 +189,7 @@ async def get_user_achievements(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("teacher", "admin")),
 ):
-    await _assert_student_access(db, current_user, user_id)
+    await ensure_teacher_or_admin_can_access_user(db, current_user, user_id)
     return await analytics_repo.list_user_achievements(db, user_id)
 
 
@@ -221,7 +201,7 @@ async def get_user_points_ledger(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("teacher", "admin")),
 ):
-    await _assert_student_access(db, current_user, user_id)
+    await ensure_teacher_or_admin_can_access_user(db, current_user, user_id)
     items = await analytics_repo.list_points_ledger_for_user(
         db,
         user_id,
@@ -431,8 +411,7 @@ async def user_performance(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.id != user_id and current_user.role not in {"teacher", "admin"}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    await ensure_teacher_or_admin_can_access_user(db, current_user, user_id)
     performance = await analytics_repo.user_performance(db, user_id)
     if performance is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

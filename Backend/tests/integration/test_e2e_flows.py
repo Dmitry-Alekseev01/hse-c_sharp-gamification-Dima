@@ -2,6 +2,7 @@ import pytest
 
 from app.core.security import get_password_hash
 from app.models.user import User
+from app.repositories import group_repo
 
 pytestmark = pytest.mark.asyncio
 
@@ -204,6 +205,8 @@ async def test_e2e_open_answer_pending_and_teacher_grading(client, db):
 
     teacher_token = await login(client, teacher.username, "teach123")
     student_token = await login(client, student.username, "stud123")
+    teacher_group = await group_repo.create_group(db, "teacher-grade-e2e-group", teacher.id)
+    await group_repo.add_user_to_group(db, teacher_group, student.id)
 
     test_response = await client.post(
         "/api/v1/tests/",

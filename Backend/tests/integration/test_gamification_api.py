@@ -151,6 +151,13 @@ async def test_teacher_admin_student_achievements_and_ledger_access(client, db):
         role="user",
         full_name="Access Student",
     )
+    unmanaged_student = await seed_user(
+        db,
+        username="access_unmanaged@example.com",
+        password="stud123",
+        role="user",
+        full_name="Access Unmanaged",
+    )
     outsider_teacher = await seed_user(
         db,
         username="access_outsider@example.com",
@@ -194,6 +201,30 @@ async def test_teacher_admin_student_achievements_and_ledger_access(client, db):
     teacher_ledger = teacher_ledger_response.json()
     assert any(item["reason_code"] == "seed_points_access_case" for item in teacher_ledger["items"])
 
+    teacher_user_analytics_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}",
+        headers=auth_headers(teacher_token),
+    )
+    assert teacher_user_analytics_response.status_code == 200, teacher_user_analytics_response.text
+
+    teacher_user_progress_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/progress",
+        headers=auth_headers(teacher_token),
+    )
+    assert teacher_user_progress_response.status_code == 200, teacher_user_progress_response.text
+
+    teacher_user_performance_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/performance",
+        headers=auth_headers(teacher_token),
+    )
+    assert teacher_user_performance_response.status_code == 200, teacher_user_performance_response.text
+
+    teacher_unmanaged_user_response = await client.get(
+        f"/api/v1/analytics/user/{unmanaged_student.id}",
+        headers=auth_headers(teacher_token),
+    )
+    assert teacher_unmanaged_user_response.status_code == 403, teacher_unmanaged_user_response.text
+
     admin_achievements_response = await client.get(
         f"/api/v1/analytics/user/{student.id}/achievements",
         headers=auth_headers(admin_token),
@@ -206,6 +237,24 @@ async def test_teacher_admin_student_achievements_and_ledger_access(client, db):
     )
     assert admin_ledger_response.status_code == 200, admin_ledger_response.text
 
+    admin_user_analytics_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}",
+        headers=auth_headers(admin_token),
+    )
+    assert admin_user_analytics_response.status_code == 200, admin_user_analytics_response.text
+
+    admin_user_progress_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/progress",
+        headers=auth_headers(admin_token),
+    )
+    assert admin_user_progress_response.status_code == 200, admin_user_progress_response.text
+
+    admin_user_performance_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/performance",
+        headers=auth_headers(admin_token),
+    )
+    assert admin_user_performance_response.status_code == 200, admin_user_performance_response.text
+
     student_forbidden_response = await client.get(
         f"/api/v1/analytics/user/{student.id}/achievements",
         headers=auth_headers(student_token),
@@ -217,3 +266,21 @@ async def test_teacher_admin_student_achievements_and_ledger_access(client, db):
         headers=auth_headers(outsider_token),
     )
     assert outsider_forbidden_response.status_code == 403, outsider_forbidden_response.text
+
+    outsider_user_analytics_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}",
+        headers=auth_headers(outsider_token),
+    )
+    assert outsider_user_analytics_response.status_code == 403, outsider_user_analytics_response.text
+
+    outsider_user_progress_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/progress",
+        headers=auth_headers(outsider_token),
+    )
+    assert outsider_user_progress_response.status_code == 403, outsider_user_progress_response.text
+
+    outsider_user_performance_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/performance",
+        headers=auth_headers(outsider_token),
+    )
+    assert outsider_user_performance_response.status_code == 403, outsider_user_performance_response.text
