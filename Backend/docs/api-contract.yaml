@@ -50,6 +50,18 @@ components:
         username: { type: string, nullable: true }
         full_name: { type: string, nullable: true }
 
+    UserPasswordChange:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string }
+        new_password: { type: string }
+
+    PasswordChangeRead:
+      type: object
+      properties:
+        detail: { type: string }
+
     MaterialRead:
       type: object
       properties:
@@ -164,6 +176,7 @@ components:
         description: { type: string, nullable: true }
         time_limit_minutes: { type: integer, nullable: true }
         max_score: { type: integer, nullable: true }
+        max_attempts: { type: integer, minimum: 1 }
         published: { type: boolean }
         published_at: { type: string, format: date-time, nullable: true }
         material_id: { type: integer, nullable: true }
@@ -182,6 +195,7 @@ components:
         description: { type: string, nullable: true }
         time_limit_minutes: { type: integer, nullable: true }
         max_score: { type: integer, nullable: true }
+        max_attempts: { type: integer, minimum: 1, default: 1 }
         published: { type: boolean }
         material_id: { type: integer, nullable: true }
         material_ids:
@@ -499,6 +513,29 @@ components:
         started_at: { type: string, format: date-time }
         submitted_at: { type: string, format: date-time, nullable: true }
         completed_at: { type: string, format: date-time, nullable: true }
+
+    TestAttemptQuotaRead:
+      type: object
+      properties:
+        test_id: { type: integer }
+        max_attempts: { type: integer }
+        completed_attempts: { type: integer }
+        remaining_attempts: { type: integer }
+        has_active_attempt: { type: boolean }
+
+    TestAttemptStateRead:
+      type: object
+      properties:
+        attempt_id: { type: integer }
+        test_id: { type: integer }
+        status: { type: string }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+        time_limit_minutes: { type: integer, nullable: true }
+        elapsed_seconds: { type: integer }
+        remaining_seconds: { type: integer, nullable: true }
+        is_expired: { type: boolean }
+        expired_reason: { type: string, nullable: true }
 
     TestSummary:
       type: object
@@ -826,6 +863,22 @@ paths:
         '400': { description: Validation or uniqueness error }
         '401': { description: Unauthorized }
 
+  /api/v1/users/me/password:
+    patch:
+      summary: Change current user password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserPasswordChange' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasswordChangeRead' }
+        '400': { description: Invalid current password or weak new password }
+        '401': { description: Unauthorized }
+
   /api/v1/users/{user_id}:
     get:
       summary: Get user by id (self or admin)
@@ -994,13 +1047,13 @@ paths:
   /api/v1/tests/{test_id}/attempts/start:
     post:
       summary: Start attempt or return active one
-      description: One active attempt per test. Re-taking completed test is forbidden. Locked tests are inaccessible for regular users until their level is high enough.
+      description: One active attempt per test. Re-taking completed test is allowed until max_attempts is exhausted. Locked tests are inaccessible for regular users until their level is high enough.
       responses:
         '201':
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TestAttemptRead' }
-        '409': { description: Deadline passed, time limit exceeded, or test already completed }
+        '409': { description: Deadline passed, time limit exceeded, or no attempts left }
 
   /api/v1/tests/{test_id}/attempts/me:
     get:
@@ -1012,6 +1065,25 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/TestAttemptRead' }
+
+  /api/v1/tests/{test_id}/attempts/quota:
+    get:
+      summary: Current user quota for test attempts
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestAttemptQuotaRead' }
+
+  /api/v1/tests/attempts/{attempt_id}/state:
+    get:
+      summary: Current attempt timer state
+      description: Returns elapsed/remaining time and auto-finalizes attempt when deadline or time limit has already expired.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestAttemptStateRead' }
 
   /api/v1/tests/attempts/{attempt_id}/complete:
     post:

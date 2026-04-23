@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     rate_limit_answers: int = Field(180)
     rate_limit_analytics: int = Field(120)
     rate_limit_ai: int = Field(30)
+    rate_limit_password: int = Field(10)
     rate_limit_admin: int = Field(120)
     rate_limit_admin_login: int = Field(10)
 

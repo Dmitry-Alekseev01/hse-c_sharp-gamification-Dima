@@ -69,6 +69,7 @@ async def create_test(
     description: str | None = None,
     time_limit_minutes: int | None = None,
     max_score: int | None = None,
+    max_attempts: int = 1,
     published: bool = False,
     material_id: int | None = None,
     material_ids: list[int] | None = None,
@@ -81,6 +82,7 @@ async def create_test(
         description=description,
         time_limit_minutes=time_limit_minutes,
         max_score=max_score,
+        max_attempts=max_attempts,
         published=published,
         material_id=material_id,
         deadline=deadline,
@@ -113,6 +115,7 @@ async def update_test(
     description: str | None = None,
     time_limit_minutes: int | None = None,
     max_score: int | None = None,
+    max_attempts: int | None = None,
     published: bool | None = None,
     material_id: int | None | object = _UNSET,
     material_ids: list[int] | None | object = _UNSET,
@@ -131,6 +134,8 @@ async def update_test(
         test.time_limit_minutes = time_limit_minutes
     if max_score is not None:
         test.max_score = max_score
+    if max_attempts is not None:
+        test.max_attempts = max_attempts
     if published is not None:
         test.published = published
     if material_id is not _UNSET:

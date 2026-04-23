@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import List
 
@@ -8,6 +8,7 @@ class TestCreate(BaseModel):
     description: str | None = None
     time_limit_minutes: int | None = None
     max_score: int | None = None
+    max_attempts: int = Field(default=1, ge=1)
     published: bool = False
     material_id: int | None = None
     material_ids: List[int] | None = None
@@ -20,6 +21,7 @@ class TestUpdate(BaseModel):
     description: str | None = None
     time_limit_minutes: int | None = None
     max_score: int | None = None
+    max_attempts: int | None = Field(default=None, ge=1)
     published: bool | None = None
     material_id: int | None = None
     material_ids: List[int] | None = None
@@ -34,6 +36,7 @@ class TestRead(BaseModel):
     description: str | None
     time_limit_minutes: int | None
     max_score: int | None
+    max_attempts: int
     published: bool
     published_at: datetime | None
     material_id: int | None

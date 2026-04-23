@@ -12,6 +12,7 @@ class Test(Base):
     description = Column(Text, nullable=True)
     time_limit_minutes = Column(Integer, nullable=True)
     max_score = Column(Integer, nullable=True)
+    max_attempts = Column(Integer, nullable=False, default=1, server_default="1")
     published = Column(Boolean, default=False, nullable=False)
     published_at = Column(DateTime, server_default=func.now(), nullable=True)
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=True, index=True)

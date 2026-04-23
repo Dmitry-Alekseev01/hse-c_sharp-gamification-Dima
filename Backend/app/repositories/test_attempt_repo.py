@@ -56,6 +56,16 @@ async def list_attempts_for_user(session, user_id: int, test_id: int | None = No
     return res.scalars().all()
 
 
+async def count_completed_attempts_for_user_test(session, user_id: int, test_id: int) -> int:
+    stmt = select(func.count(TestAttempt.id)).where(
+        TestAttempt.user_id == user_id,
+        TestAttempt.test_id == test_id,
+        TestAttempt.status == "completed",
+    )
+    value = await session.scalar(stmt)
+    return int(value or 0)
+
+
 async def complete_attempt(session, attempt: TestAttempt) -> TestAttempt:
     if attempt.status != "completed":
         now = datetime.now(UTC).replace(tzinfo=None)

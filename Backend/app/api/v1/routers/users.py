@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.security import get_current_user, require_roles
-from app.schemas.user import AdminUserCreate, UserProfileUpdate, UserRead, UserRoleUpdate
+from app.schemas.user import AdminUserCreate, PasswordChangeRead, UserPasswordChange, UserProfileUpdate, UserRead, UserRoleUpdate
 from app.services import user_service
 from app.repositories import user_repo
 from app.models.user import User as UserModel
@@ -70,6 +70,26 @@ async def update_my_profile(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return user
+
+
+@router.patch("/me/password", response_model=PasswordChangeRead, status_code=status.HTTP_200_OK)
+async def change_my_password(
+    payload: UserPasswordChange,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    try:
+        await user_service.change_user_password(
+            db,
+            current_user.id,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return PasswordChangeRead(detail="Password updated successfully")
 
 
 @router.get("/{user_id}", response_model=UserRead)

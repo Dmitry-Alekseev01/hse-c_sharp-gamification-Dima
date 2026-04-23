@@ -22,6 +22,12 @@ def test_scope_for_admin_pages():
     assert isinstance(limit, int)
 
 
+def test_scope_for_password_change_endpoint():
+    scope, limit = RateLimitMiddleware._get_scope_and_limit("/api/v1/users/me/password", "PATCH")
+    assert scope == "password"
+    assert limit == settings.rate_limit_password
+
+
 def test_identifier_prefers_x_real_ip_over_forwarded_for():
     request = _DummyRequest(
         headers={

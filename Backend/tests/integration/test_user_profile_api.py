@@ -133,3 +133,61 @@ async def test_admin_can_update_user_profile_non_admin_cannot(client, db):
         json={"full_name": "Should Not Work"},
     )
     assert non_admin_update.status_code == 403, non_admin_update.text
+
+
+async def test_user_can_change_password_and_login_with_new_one(client, db):
+    user = await seed_user(
+        db,
+        username="password_change_api@example.com",
+        password="user12345",
+        role="user",
+        full_name="Password API User",
+    )
+    token = await login(client, user.username, "user12345")
+
+    change_response = await client.patch(
+        "/api/v1/users/me/password",
+        headers=auth_headers(token),
+        json={
+            "current_password": "user12345",
+            "new_password": "user67890",
+        },
+    )
+    assert change_response.status_code == 200, change_response.text
+    assert change_response.json()["detail"] == "Password updated successfully"
+
+    old_token_me = await client.get("/api/v1/auth/me", headers=auth_headers(token))
+    assert old_token_me.status_code == 401, old_token_me.text
+
+    old_login_response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": user.username, "password": "user12345"},
+    )
+    assert old_login_response.status_code == 401, old_login_response.text
+
+    new_token = await login(client, user.username, "user67890")
+    me_response = await client.get("/api/v1/auth/me", headers=auth_headers(new_token))
+    assert me_response.status_code == 200, me_response.text
+    assert me_response.json()["username"] == user.username
+
+
+async def test_user_change_password_rejects_wrong_current_password(client, db):
+    user = await seed_user(
+        db,
+        username="password_change_api_invalid@example.com",
+        password="user12345",
+        role="user",
+        full_name="Password API Invalid",
+    )
+    token = await login(client, user.username, "user12345")
+
+    response = await client.patch(
+        "/api/v1/users/me/password",
+        headers=auth_headers(token),
+        json={
+            "current_password": "wrong_password",
+            "new_password": "user67890",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert "Current password is incorrect" in response.json()["detail"]

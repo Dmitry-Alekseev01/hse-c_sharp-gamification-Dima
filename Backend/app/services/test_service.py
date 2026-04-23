@@ -41,6 +41,7 @@ async def create_test(
         description=payload.description,
         time_limit_minutes=payload.time_limit_minutes,
         max_score=payload.max_score,
+        max_attempts=payload.max_attempts,
         published=payload.published,
         material_id=payload.material_id,
         material_ids=payload.material_ids,

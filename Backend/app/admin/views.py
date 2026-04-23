@@ -245,6 +245,7 @@ class TestAdminView(AdminAuditedModelView):
         "description",
         "time_limit_minutes",
         "max_score",
+        "max_attempts",
         "published",
         "published_at",
         "material_id",
@@ -258,6 +259,7 @@ class TestAdminView(AdminAuditedModelView):
         "title",
         "time_limit_minutes",
         "max_score",
+        "max_attempts",
         "published",
         "published_at",
         "material_id",
@@ -272,6 +274,7 @@ class TestAdminView(AdminAuditedModelView):
         self._validate_required_str(data, "title", errors, max_len=300)
         self._validate_optional_int_min(data, "time_limit_minutes", errors, minimum=1)
         self._validate_optional_float_min(data, "max_score", errors, minimum=0.0)
+        self._validate_optional_int_min(data, "max_attempts", errors, minimum=1)
         if errors:
             raise FormValidationError(errors)
 

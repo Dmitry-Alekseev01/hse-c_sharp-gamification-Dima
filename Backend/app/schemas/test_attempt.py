@@ -21,3 +21,24 @@ class TestAttemptRead(BaseModel):
     completed_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TestAttemptQuotaRead(BaseModel):
+    test_id: int
+    max_attempts: int
+    completed_attempts: int
+    remaining_attempts: int
+    has_active_attempt: bool
+
+
+class TestAttemptStateRead(BaseModel):
+    attempt_id: int
+    test_id: int
+    status: str
+    started_at: datetime
+    completed_at: datetime | None
+    time_limit_minutes: int | None
+    elapsed_seconds: int
+    remaining_seconds: int | None
+    is_expired: bool
+    expired_reason: str | None

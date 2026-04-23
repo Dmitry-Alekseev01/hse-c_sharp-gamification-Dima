@@ -1,5 +1,7 @@
 # app/core/security.py
 from datetime import UTC, datetime, timedelta
+import hashlib
+import hmac
 from typing import Optional
 
 from jose import JWTError, jwt
@@ -29,6 +31,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
+
+def build_password_version(password_hash: str) -> str:
+    digest = hashlib.sha256(password_hash.encode("utf-8")).hexdigest()
+    return digest[:24]
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -70,4 +77,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     user = await get_user_by_username(db, username)
     if user is None:
         raise credentials_exception
+
+    token_pwdv = payload.get("pwdv")
+    if not isinstance(token_pwdv, str):
+        raise credentials_exception
+    current_pwdv = build_password_version(user.password_hash)
+    if not hmac.compare_digest(token_pwdv, current_pwdv):
+        raise credentials_exception
+
     return user

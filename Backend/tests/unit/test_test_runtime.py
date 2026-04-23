@@ -24,7 +24,25 @@ async def test_resolve_attempt_for_user_blocks_second_completed_attempt(db):
     attempt = await resolve_attempt_for_user(db, test, user.id)
     await test_attempt_repo.complete_attempt(db, attempt)
 
-    with pytest.raises(AttemptPolicyError, match="already been completed"):
+    with pytest.raises(AttemptPolicyError, match="No attempts remaining"):
+        await resolve_attempt_for_user(db, test, user.id)
+
+
+@pytest.mark.asyncio
+async def test_resolve_attempt_for_user_allows_retry_until_max_attempts(db):
+    user = User(username="attempt_user_retries", password_hash="x")
+    test = Test(title="retry policy", max_attempts=2)
+    db.add_all([user, test])
+    await db.flush()
+
+    first_attempt = await resolve_attempt_for_user(db, test, user.id)
+    await test_attempt_repo.complete_attempt(db, first_attempt)
+
+    second_attempt = await resolve_attempt_for_user(db, test, user.id)
+    assert second_attempt.id != first_attempt.id
+    await test_attempt_repo.complete_attempt(db, second_attempt)
+
+    with pytest.raises(AttemptPolicyError, match="No attempts remaining"):
         await resolve_attempt_for_user(db, test, user.id)
 
 

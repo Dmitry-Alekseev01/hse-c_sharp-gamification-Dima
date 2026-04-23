@@ -114,6 +114,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return "admin", settings.rate_limit_admin
         if path.startswith("/api/v1/auth/"):
             return "auth", settings.rate_limit_auth
+        if path == "/api/v1/users/me/password" and method.upper() == "PATCH":
+            return "password", settings.rate_limit_password
         if path.startswith("/api/v1/answers/"):
             return "answers", settings.rate_limit_answers
         if path.startswith("/api/v1/analytics/"):

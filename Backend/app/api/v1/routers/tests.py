@@ -33,15 +33,50 @@ from app.schemas.grading import AttemptScoreUpdate
 from app.schemas.question import QuestionRead
 from app.schemas.test_ import TestCreate, TestRead, TestUpdate
 from app.schemas.analytics import TestSummary
-from app.schemas.test_attempt import TestAttemptRead
+from app.schemas.test_attempt import TestAttemptQuotaRead, TestAttemptRead, TestAttemptStateRead
 from app.schemas.test_content import TestContentRead
 from app.repositories import analytics_repo, test_repo, test_attempt_repo
 from app.repositories import question_repo
 from app.services import test_service
 from app.services.challenge_service import ChallengeEventType, record_event
-from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user
+from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user, utcnow
 
 router = APIRouter()
+
+
+def _build_attempt_state_payload(
+    *,
+    test,
+    attempt,
+    expired_reason: str | None = None,
+) -> TestAttemptStateRead:
+    reference_time = attempt.completed_at or utcnow()
+    elapsed_seconds = max(int((reference_time - attempt.started_at).total_seconds()), 0)
+
+    remaining_seconds: int | None = None
+    time_limit_minutes = test.time_limit_minutes
+    if time_limit_minutes is not None:
+        total_limit_seconds = int(time_limit_minutes) * 60
+        remaining_seconds = max(total_limit_seconds - elapsed_seconds, 0)
+
+    inferred_reason = expired_reason
+    if inferred_reason is None and time_limit_minutes is not None and remaining_seconds == 0:
+        inferred_reason = "time_limit"
+    if inferred_reason is None and test.deadline is not None and reference_time >= test.deadline:
+        inferred_reason = "deadline"
+
+    return TestAttemptStateRead(
+        attempt_id=attempt.id,
+        test_id=attempt.test_id,
+        status=attempt.status,
+        started_at=attempt.started_at,
+        completed_at=attempt.completed_at,
+        time_limit_minutes=time_limit_minutes,
+        elapsed_seconds=elapsed_seconds,
+        remaining_seconds=remaining_seconds,
+        is_expired=inferred_reason in {"time_limit", "deadline"},
+        expired_reason=inferred_reason,
+    )
 
 
 @router.get("/", response_model=List[TestRead], status_code=status.HTTP_200_OK)
@@ -234,6 +269,45 @@ async def list_my_test_attempts(
 ):
     await get_visible_test(db, test_id, current_user)
     return await test_attempt_repo.list_attempts_for_user(db, current_user.id, test_id=test_id)
+
+
+@router.get("/{test_id}/attempts/quota", response_model=TestAttemptQuotaRead, status_code=status.HTTP_200_OK)
+async def get_my_test_attempt_quota(
+    test_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    test = await get_visible_test(db, test_id, current_user)
+    max_attempts = max(int(test.max_attempts or 1), 1)
+    completed_attempts = await test_attempt_repo.count_completed_attempts_for_user_test(db, current_user.id, test_id)
+    active_attempt = await test_attempt_repo.get_active_attempt(db, current_user.id, test_id)
+    return TestAttemptQuotaRead(
+        test_id=test_id,
+        max_attempts=max_attempts,
+        completed_attempts=completed_attempts,
+        remaining_attempts=max(max_attempts - completed_attempts, 0),
+        has_active_attempt=active_attempt is not None,
+    )
+
+
+@router.get("/attempts/{attempt_id}/state", response_model=TestAttemptStateRead, status_code=status.HTTP_200_OK)
+async def get_attempt_state(
+    attempt_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    attempt = await test_attempt_repo.get_attempt(db, attempt_id)
+    if attempt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+    if attempt.user_id != current_user.id and current_user.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    test = await test_service.get_test_or_summary_access(db, attempt.test_id, current_user)
+    if current_user.role == "teacher":
+        await get_manageable_test(db, attempt.test_id, current_user)
+
+    attempt, reason = await finalize_attempt_if_expired(db, test, attempt)
+    return _build_attempt_state_payload(test=test, attempt=attempt, expired_reason=reason)
 
 
 @router.post("/attempts/{attempt_id}/complete", response_model=TestAttemptRead, status_code=status.HTTP_200_OK)

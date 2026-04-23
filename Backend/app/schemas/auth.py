@@ -19,5 +19,6 @@ class TokenPayload(BaseModel):
     sub: str
     exp: int
     role: str | None = None
+    pwdv: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

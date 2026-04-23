@@ -25,6 +25,13 @@ async def test_list_tests_can_filter_by_author(db):
 
 
 @pytest.mark.asyncio
+async def test_create_test_sets_default_max_attempts(db):
+    test = await test_repo.create_test(db, title="Default attempts")
+
+    assert test.max_attempts == 1
+
+
+@pytest.mark.asyncio
 async def test_create_test_syncs_primary_material_from_material_ids(db):
     material_a = Material(title="A", material_type="lesson", status="published")
     material_b = Material(title="B", material_type="lesson", status="published")
@@ -56,3 +63,13 @@ async def test_update_test_keeps_material_links_in_sync(db):
     assert updated is not None
     assert updated.material_id == material_b.id
     assert updated.material_ids == [material_b.id]
+
+
+@pytest.mark.asyncio
+async def test_update_test_updates_max_attempts(db):
+    test = await test_repo.create_test(db, title="Attempts update", max_attempts=1)
+
+    updated = await test_repo.update_test(db, test.id, max_attempts=3)
+
+    assert updated is not None
+    assert updated.max_attempts == 3
