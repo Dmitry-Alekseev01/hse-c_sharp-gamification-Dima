@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.config import settings
 from app.core.security import create_access_token, get_current_user
 from app.models.user import User
 from app.repositories import auth_repo
@@ -17,6 +18,8 @@ def _clear_admin_session_cookie(response: Response) -> None:
     # Admin panel auth is isolated from API bearer auth, but we still clear
     # admin cookie on successful API auth transitions to avoid cross-user carry-over.
     response.delete_cookie("admin_session", path="/")
+    admin_path = settings.admin_base_url.rstrip("/") or "/admin"
+    response.delete_cookie("admin_session", path=admin_path)
 
 
 @router.post("/token", response_model=TokenRead)

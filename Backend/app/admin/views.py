@@ -64,24 +64,24 @@ class AdminAuditedModelView(ModelView):
             obj_id,
         )
 
-    def before_create(self, request: Request, data: dict[str, Any], obj: Any) -> None:
+    async def before_create(self, request: Request, data: dict[str, Any], obj: Any) -> None:
         del data, obj
         self._audit(request, "before_create")
 
-    def after_create(self, request: Request, obj: Any) -> None:
+    async def after_create(self, request: Request, obj: Any) -> None:
         self._audit(request, "after_create", obj)
 
-    def before_edit(self, request: Request, data: dict[str, Any], obj: Any) -> None:
+    async def before_edit(self, request: Request, data: dict[str, Any], obj: Any) -> None:
         del data
         self._audit(request, "before_edit", obj)
 
-    def after_edit(self, request: Request, obj: Any) -> None:
+    async def after_edit(self, request: Request, obj: Any) -> None:
         self._audit(request, "after_edit", obj)
 
-    def before_delete(self, request: Request, obj: Any) -> None:
+    async def before_delete(self, request: Request, obj: Any) -> None:
         self._audit(request, "before_delete", obj)
 
-    def after_delete(self, request: Request, obj: Any) -> None:
+    async def after_delete(self, request: Request, obj: Any) -> None:
         self._audit(request, "after_delete", obj)
 
     def _validate_required_str(
@@ -109,6 +109,26 @@ class AdminAuditedModelView(ModelView):
     ) -> None:
         raw_value = data.get(field)
         if raw_value in (None, ""):
+            return
+        try:
+            numeric_value = int(raw_value)
+        except (TypeError, ValueError):
+            errors.setdefault(field, []).append("Must be an integer")
+            return
+        if numeric_value < minimum:
+            errors.setdefault(field, []).append(f"Must be >= {minimum}")
+
+    def _validate_required_int_min(
+        self,
+        data: dict[str, Any],
+        field: str,
+        errors: dict[str, list[str]],
+        *,
+        minimum: int = 1,
+    ) -> None:
+        raw_value = data.get(field)
+        if raw_value in (None, ""):
+            errors.setdefault(field, []).append("Field is required")
             return
         try:
             numeric_value = int(raw_value)
@@ -156,7 +176,7 @@ class ReadOnlyAdminView(AdminAuditedModelView):
         del request
         return False
 
-    def validate(self, request: Request, data: dict[str, Any]) -> None:
+    async def validate(self, request: Request, data: dict[str, Any]) -> None:
         del request, data
         return None
 
@@ -181,7 +201,7 @@ class UserReadOnlyView(AdminAuditedModelView):
         del request
         return False
 
-    def validate(self, request: Request, data: dict[str, Any]) -> None:
+    async def validate(self, request: Request, data: dict[str, Any]) -> None:
         del request, data
         return None
 
@@ -202,7 +222,7 @@ class MaterialAdminView(AdminAuditedModelView):
     searchable_fields = ["title", "description"]
     sortable_fields = ["id", "title", "material_type", "status", "published_at", "author_id", "required_level_id"]
 
-    def validate(self, request: Request, data: dict[str, Any]) -> None:
+    async def validate(self, request: Request, data: dict[str, Any]) -> None:
         del request
         errors: dict[str, list[str]] = {}
         self._validate_required_str(data, "title", errors, max_len=300)
@@ -246,7 +266,7 @@ class TestAdminView(AdminAuditedModelView):
         "deadline",
     ]
 
-    def validate(self, request: Request, data: dict[str, Any]) -> None:
+    async def validate(self, request: Request, data: dict[str, Any]) -> None:
         del request
         errors: dict[str, list[str]] = {}
         self._validate_required_str(data, "title", errors, max_len=300)
@@ -263,9 +283,10 @@ class QuestionAdminView(AdminAuditedModelView):
     searchable_fields = ["text"]
     sortable_fields = ["id", "test_id", "points", "is_open_answer"]
 
-    def validate(self, request: Request, data: dict[str, Any]) -> None:
+    async def validate(self, request: Request, data: dict[str, Any]) -> None:
         del request
         errors: dict[str, list[str]] = {}
+        self._validate_required_int_min(data, "test_id", errors, minimum=1)
         self._validate_required_str(data, "text", errors)
         self._validate_optional_float_min(data, "points", errors, minimum=0.0, strict_gt=True)
         if errors:
@@ -279,9 +300,10 @@ class ChoiceAdminView(AdminAuditedModelView):
     searchable_fields = ["value"]
     sortable_fields = ["id", "question_id", "ordinal", "is_correct"]
 
-    def validate(self, request: Request, data: dict[str, Any]) -> None:
+    async def validate(self, request: Request, data: dict[str, Any]) -> None:
         del request
         errors: dict[str, list[str]] = {}
+        self._validate_required_int_min(data, "question_id", errors, minimum=1)
         self._validate_required_str(data, "value", errors, max_len=1000)
         self._validate_optional_int_min(data, "ordinal", errors, minimum=0)
         if errors:
@@ -295,7 +317,7 @@ class LevelAdminView(AdminAuditedModelView):
     searchable_fields = ["name", "description"]
     sortable_fields = ["id", "name", "required_points"]
 
-    def validate(self, request: Request, data: dict[str, Any]) -> None:
+    async def validate(self, request: Request, data: dict[str, Any]) -> None:
         del request
         errors: dict[str, list[str]] = {}
         self._validate_required_str(data, "name", errors, max_len=200)

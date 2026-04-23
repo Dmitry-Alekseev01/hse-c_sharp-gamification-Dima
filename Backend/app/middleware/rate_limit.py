@@ -1,4 +1,5 @@
 import time
+from ipaddress import ip_address
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -20,6 +21,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         identifier = self._get_identifier(request)
+        if is_admin_path and not self._is_admin_ip_allowed(identifier):
+            return JSONResponse(status_code=403, content={"detail": "Admin access denied from this IP"})
+
         scope, limit = self._get_scope_and_limit(path, request.method)
         window = settings.rate_limit_window_seconds
         bucket = int(time.time() // window)
@@ -68,6 +72,38 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if request.client and request.client.host:
             return request.client.host
         return "unknown"
+
+    @staticmethod
+    def _normalize_identifier_ip(identifier: str) -> str:
+        value = (identifier or "").strip()
+        if not value:
+            return value
+
+        if value.startswith("[") and "]" in value:
+            value = value[1 : value.index("]")]
+
+        if value.count(":") == 1 and "." in value:
+            host_part, port_part = value.rsplit(":", 1)
+            if port_part.isdigit():
+                value = host_part
+        return value
+
+    @staticmethod
+    def _is_admin_ip_allowed(identifier: str) -> bool:
+        try:
+            networks = settings.get_admin_allowed_networks()
+        except ValueError:
+            return False
+        if not networks:
+            return True
+
+        candidate = RateLimitMiddleware._normalize_identifier_ip(identifier)
+        try:
+            client_ip = ip_address(candidate)
+        except ValueError:
+            return False
+
+        return any(client_ip in network for network in networks)
 
     @staticmethod
     def _get_scope_and_limit(path: str, method: str) -> tuple[str, int]:

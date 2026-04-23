@@ -5,10 +5,15 @@ from starlette.responses import Response
 from starlette_admin.auth import AdminUser, AuthProvider
 from starlette_admin.exceptions import LoginFailed
 
+from app.admin.mfa import split_password_and_totp, verify_totp_code
 from app.cache.redis_cache import get_redis_client
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.repositories import auth_repo, user_repo
+
+
+class _AdminSecurityBackendUnavailable(Exception):
+    pass
 
 
 class AdminOnlyAuthProvider(AuthProvider):
@@ -28,20 +33,37 @@ class AdminOnlyAuthProvider(AuthProvider):
         if not username or not password:
             raise LoginFailed("Invalid username or password")
 
+        password, mfa_code = await self._extract_password_and_mfa_code(request, password)
         identifier = self._get_identifier(request)
         username_key = username.lower()
 
-        if await self._is_login_temporarily_blocked(identifier, username_key):
-            raise LoginFailed("Too many attempts. Try again later.")
+        try:
+            security_client = await self._get_security_redis_client()
+            if await self._is_login_temporarily_blocked(identifier, username_key, security_client):
+                raise LoginFailed("Too many attempts. Try again later.")
 
-        async with AsyncSessionLocal() as db:
-            user = await auth_repo.authenticate_user(db, username, password)
+            async with AsyncSessionLocal() as db:
+                user = await auth_repo.authenticate_user(db, username, password)
 
-        if user is None or str(user.role).lower() != "admin":
-            await self._register_failed_attempt(identifier, username_key)
-            raise LoginFailed("Invalid username or password")
+            if user is None or str(user.role).lower() != "admin":
+                await self._register_failed_attempt(identifier, username_key, security_client)
+                raise LoginFailed("Invalid username or password")
 
-        await self._clear_failed_attempts(identifier, username_key)
+            if settings.admin_mfa_enabled:
+                is_mfa_ok = verify_totp_code(
+                    secret=settings.admin_mfa_totp_secret or "",
+                    code=mfa_code,
+                    period_seconds=settings.admin_mfa_totp_period_seconds,
+                    digits=settings.admin_mfa_totp_digits,
+                    drift_windows=settings.admin_mfa_totp_drift_windows,
+                )
+                if not is_mfa_ok:
+                    await self._register_failed_attempt(identifier, username_key, security_client)
+                    raise LoginFailed("Invalid username or password")
+
+            await self._clear_failed_attempts(identifier, username_key, security_client)
+        except _AdminSecurityBackendUnavailable:
+            raise LoginFailed("Admin login is temporarily unavailable")
 
         request.session.update(
             {
@@ -112,33 +134,44 @@ class AdminOnlyAuthProvider(AuthProvider):
         bucket = int(time.time() // window)
         return f"admin:login:attempt:{identifier}:{username}:{bucket}"
 
-    async def _is_login_temporarily_blocked(self, identifier: str, username: str) -> bool:
-        try:
-            client = get_redis_client()
-            ttl = await client.ttl(self._block_key(identifier, username))
-            return ttl is not None and int(ttl) > 0
-        except Exception:
-            return False
+    async def _is_login_temporarily_blocked(self, identifier: str, username: str, client) -> bool:
+        ttl = await client.ttl(self._block_key(identifier, username))
+        return ttl is not None and int(ttl) > 0
 
-    async def _register_failed_attempt(self, identifier: str, username: str) -> None:
-        try:
-            client = get_redis_client()
-            key = self._attempt_key(identifier, username)
-            attempts = await client.incr(key)
-            if attempts == 1:
-                await client.expire(key, max(settings.admin_login_window_seconds, 1) + 1)
-            if attempts >= max(settings.admin_login_max_attempts, 1):
-                await client.set(
-                    self._block_key(identifier, username),
-                    "1",
-                    ex=max(settings.admin_login_block_seconds, 1),
-                )
-        except Exception:
-            return
+    async def _register_failed_attempt(self, identifier: str, username: str, client) -> None:
+        key = self._attempt_key(identifier, username)
+        attempts = await client.incr(key)
+        if attempts == 1:
+            await client.expire(key, max(settings.admin_login_window_seconds, 1) + 1)
+        if attempts >= max(settings.admin_login_max_attempts, 1):
+            await client.set(
+                self._block_key(identifier, username),
+                "1",
+                ex=max(settings.admin_login_block_seconds, 1),
+            )
 
-    async def _clear_failed_attempts(self, identifier: str, username: str) -> None:
+    async def _clear_failed_attempts(self, identifier: str, username: str, client) -> None:
+        await client.delete(self._block_key(identifier, username), self._attempt_key(identifier, username))
+
+    async def _get_security_redis_client(self):
         try:
             client = get_redis_client()
-            await client.delete(self._block_key(identifier, username), self._attempt_key(identifier, username))
+            await client.ping()
+            return client
+        except Exception as exc:
+            raise _AdminSecurityBackendUnavailable from exc
+
+    @staticmethod
+    async def _extract_password_and_mfa_code(request: Request, raw_password: str) -> tuple[str, str | None]:
+        password, mfa_code = split_password_and_totp(raw_password)
+        if mfa_code:
+            return password, mfa_code
+
+        try:
+            form = await request.form()
+            code = form.get("otp_code") or form.get("mfa_code")
+            if code is None:
+                return password, None
+            return password, str(code).strip()
         except Exception:
-            return
+            return password, None

@@ -6,6 +6,8 @@ DESCRIPTION: application configuration via pydantic BaseSettings.
 - If DATABASE_URL is provided explicitly in env, it will be used as-is.
 TODO: In production use secrets manager and do not commit secrets to VCS.
 """
+from ipaddress import IPv4Network, IPv6Network, ip_network
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,6 +24,8 @@ class Settings(BaseSettings):
     app_host: str = Field("0.0.0.0")
     app_port: int = Field(8000)
     secret_key: str = Field("replace-me-please-change")
+    jwt_secret_key: str | None = None
+    admin_session_secret_key: str | None = None
 
     # DB - either DATABASE_URL or components
     database_url: str | None = None
@@ -75,9 +79,15 @@ class Settings(BaseSettings):
     admin_session_max_age_seconds: int = Field(60 * 60 * 8)
     admin_session_https_only: bool = Field(False)
     admin_session_same_site: str = Field("lax")
+    admin_allowed_ips: str = Field("")
     admin_login_max_attempts: int = Field(5)
     admin_login_window_seconds: int = Field(300)
     admin_login_block_seconds: int = Field(900)
+    admin_mfa_enabled: bool = Field(False)
+    admin_mfa_totp_secret: str | None = None
+    admin_mfa_totp_period_seconds: int = Field(30)
+    admin_mfa_totp_digits: int = Field(6)
+    admin_mfa_totp_drift_windows: int = Field(1)
 
     # AI / OpenRouter
     ai_gamification_enabled: bool = Field(False)
@@ -116,11 +126,34 @@ class Settings(BaseSettings):
         models = [m.strip() for m in self.openrouter_fallback_models.split(",") if m.strip()]
         return models
 
+    def get_jwt_secret_key(self) -> str:
+        return (self.jwt_secret_key or self.secret_key).strip()
+
+    def get_admin_session_secret_key(self) -> str:
+        return (self.admin_session_secret_key or self.secret_key).strip()
+
     def get_admin_session_same_site(self) -> str:
+        if self.app_env.lower() == "production":
+            return "strict"
         value = (self.admin_session_same_site or "").strip().lower()
         if value in {"lax", "strict", "none"}:
             return value
         return "lax"
+
+    def get_admin_allowed_ips(self) -> set[str]:
+        return {ip.strip() for ip in self.admin_allowed_ips.split(",") if ip.strip()}
+
+    def get_admin_allowed_networks(self) -> tuple[IPv4Network | IPv6Network, ...]:
+        networks = []
+        for raw_value in self.admin_allowed_ips.split(","):
+            candidate = raw_value.strip()
+            if not candidate:
+                continue
+            if "/" not in candidate:
+                suffix = "/128" if ":" in candidate else "/32"
+                candidate = f"{candidate}{suffix}"
+            networks.append(ip_network(candidate, strict=False))
+        return tuple(networks)
 
 
 settings = Settings()

@@ -5,6 +5,7 @@ from starlette.responses import Response
 from starlette_admin.exceptions import LoginFailed
 
 from app.admin.auth_provider import AdminOnlyAuthProvider
+from app.admin.mfa import verify_totp_code
 from app.core.config import settings
 
 pytestmark = pytest.mark.asyncio
@@ -26,6 +27,9 @@ class _DummyRequest:
         self.headers: dict = {}
         self.client = SimpleNamespace(host="127.0.0.1")
 
+    async def form(self):
+        return {}
+
 
 class _FakeRedis:
     def __init__(self):
@@ -35,6 +39,9 @@ class _FakeRedis:
         if key in self._values:
             return 60
         return -2
+
+    async def ping(self) -> bool:
+        return True
 
     async def incr(self, key: str) -> int:
         value = int(self._values.get(key, 0)) + 1
@@ -183,3 +190,101 @@ async def test_admin_auth_provider_blocks_after_too_many_failed_attempts(monkeyp
 
     with pytest.raises(LoginFailed, match="Too many attempts"):
         await provider.login("admin@example.com", "bad-3", remember_me=False, request=request, response=response)
+
+
+@pytest.mark.asyncio
+async def test_admin_auth_provider_login_with_mfa_suffix(monkeypatch):
+    provider = AdminOnlyAuthProvider()
+    request = _DummyRequest()
+    response = Response()
+
+    secret = "JBSWY3DPEHPK3PXP"
+    code = "282760"
+    assert verify_totp_code(
+        secret=secret,
+        code=code,
+        period_seconds=30,
+        digits=6,
+        drift_windows=0,
+        now_ts=0,
+    )
+
+    async def fake_authenticate_user(db, username: str, password: str):
+        del db, username
+        assert password == "secret"
+        return SimpleNamespace(id=77, username="admin@example.com", role="admin")
+
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(settings, "admin_mfa_enabled", True)
+    monkeypatch.setattr(settings, "admin_mfa_totp_secret", secret)
+    monkeypatch.setattr(settings, "admin_mfa_totp_period_seconds", 30)
+    monkeypatch.setattr(settings, "admin_mfa_totp_digits", 6)
+    monkeypatch.setattr(settings, "admin_mfa_totp_drift_windows", 1)
+    monkeypatch.setattr("app.admin.auth_provider.time.time", lambda: 0)
+    monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
+    monkeypatch.setattr("app.admin.auth_provider.auth_repo.authenticate_user", fake_authenticate_user)
+    monkeypatch.setattr("app.admin.auth_provider.get_redis_client", lambda: fake_redis)
+
+    result = await provider.login(
+        "admin@example.com",
+        f"secret::{code}",
+        remember_me=False,
+        request=request,
+        response=response,
+    )
+
+    assert result is response
+    assert request.session["admin_user_id"] == 77
+
+
+@pytest.mark.asyncio
+async def test_admin_auth_provider_login_with_mfa_invalid_code(monkeypatch):
+    provider = AdminOnlyAuthProvider()
+    request = _DummyRequest()
+    response = Response()
+
+    async def fake_authenticate_user(db, username: str, password: str):
+        del db, username, password
+        return SimpleNamespace(id=77, username="admin@example.com", role="admin")
+
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(settings, "admin_mfa_enabled", True)
+    monkeypatch.setattr(settings, "admin_mfa_totp_secret", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setattr(settings, "admin_mfa_totp_period_seconds", 30)
+    monkeypatch.setattr(settings, "admin_mfa_totp_digits", 6)
+    monkeypatch.setattr(settings, "admin_mfa_totp_drift_windows", 1)
+    monkeypatch.setattr("app.admin.auth_provider.time.time", lambda: 0)
+    monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
+    monkeypatch.setattr("app.admin.auth_provider.auth_repo.authenticate_user", fake_authenticate_user)
+    monkeypatch.setattr("app.admin.auth_provider.get_redis_client", lambda: fake_redis)
+
+    with pytest.raises(LoginFailed, match="Invalid username or password"):
+        await provider.login(
+            "admin@example.com",
+            "secret::000000",
+            remember_me=False,
+            request=request,
+            response=response,
+        )
+
+
+@pytest.mark.asyncio
+async def test_admin_auth_provider_login_is_blocked_when_redis_unavailable(monkeypatch):
+    provider = AdminOnlyAuthProvider()
+    request = _DummyRequest()
+    response = Response()
+
+    class _BrokenRedis:
+        async def ping(self):
+            raise RuntimeError("redis down")
+
+    monkeypatch.setattr("app.admin.auth_provider.get_redis_client", lambda: _BrokenRedis())
+
+    with pytest.raises(LoginFailed, match="temporarily unavailable"):
+        await provider.login(
+            "admin@example.com",
+            "secret",
+            remember_me=False,
+            request=request,
+            response=response,
+        )
