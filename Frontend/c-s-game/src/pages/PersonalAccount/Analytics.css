@@ -139,24 +139,26 @@
 }
 
 .stat-current {
-  font-size: 2.2rem;
-  font-weight: 700;
+  font-size: 1.5rem;
+  font-weight: 600;
   color: #333;
 }
 
 .stat-divider {
-  font-size: 2.2rem;
+  font-size: 1.5rem;
+  font-weight: 600;
   color: #333;
 }
 
 .stat-total {
-  font-size: 2.2rem;
+  font-size: 1.5rem;
+  font-weight: 600;
   color: #333;
 }
 
 .stat-score {
-  font-size: 3rem;
-  font-weight: 700;
+  font-size: 1.5rem;
+  font-weight: 600;
   color: #333;
   text-align: center;
   display: block;
@@ -278,7 +280,6 @@
   text-align: center;
 }
 
-/* ===== ОСТАЛЬНЫЕ СТИЛИ ===== */
 .test-results-table {
   background: #f8f9ff;
   border-radius: 16px;
@@ -303,7 +304,7 @@
 }
 
 .test-results-table th {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg,#764ba2 100%);
   color: white;
   padding: 18px;
   text-align: left;
@@ -330,7 +331,6 @@
 
 .test-score {
   font-weight: 700;
-  color: #667eea;
   font-size: 1.2rem;
 }
 
