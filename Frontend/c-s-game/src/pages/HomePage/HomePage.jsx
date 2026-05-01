@@ -189,7 +189,7 @@ const Home = () => {
       <div className="streak-section">
         <h2 className="section-title">Текущий стрик: {stats.streakDays} дней</h2>
         <div className="streak-calendar">
-          <div className="streak-placeholder">Продолжайте учиться каждый день! 🔥</div>
+          <div className="streak-placeholder">Продолжайте учиться каждый день!</div>
         </div>
         <p className="streak-motivation">
           {stats.streakDays >= 7

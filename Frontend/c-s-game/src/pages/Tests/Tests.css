@@ -8,7 +8,7 @@
   text-align: center;
   margin-bottom: 40px;
   padding: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #667eea 100%);
   border-radius: 12px;
   color: white;
 }
@@ -123,7 +123,7 @@
 .test-title {
   font-size: 1.8rem;
   font-weight: 700;
-  color: #333;
+  color: #d8d1d1;
   margin: 0;
   flex: 1;
 }
@@ -170,7 +170,7 @@
 
 .meta-label {
   font-weight: 600;
-  color: #555;
+  color: rgb(227, 219, 219) !important;
   font-size: 0.9rem;
   min-width: 90px;
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchTests, fetchUserAnswers } from '../../api/api';
+import { fetchTests, fetchUserAnswers, fetchTestContent } from '../../api/api';
 import './Tests.css';
 
 const Tests = () => {
@@ -8,12 +8,27 @@ const Tests = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [userScores, setUserScores] = useState({});
+  const [questionsCount, setQuestionsCount] = useState({});
 
   useEffect(() => {
     const loadTests = async () => {
       try {
         const data = await fetchTests();
         setTests(data);
+        
+        const countMap = {};
+        await Promise.all(
+          data.map(async (test) => {
+            try {
+              const content = await fetchTestContent(test.id);
+              countMap[test.id] = content.questions.length;
+            } catch (err) {
+              console.warn(`Не удалось загрузить вопросы для теста ${test.id}`);
+            }
+          })
+        );
+        setQuestionsCount(countMap);
+
         const scoresMap = {};
         await Promise.all(
           data.map(async (test) => {
@@ -23,8 +38,7 @@ const Tests = () => {
                 const userScore = answers.reduce((sum, ans) => sum + (ans.score || 0), 0);
                 scoresMap[test.id] = { userScore, maxScore: test.max_score };
               }
-            } catch (e) {
-            }
+            } catch (e) {}
           })
         );
         setUserScores(scoresMap);
@@ -107,6 +121,7 @@ const Tests = () => {
           const scoreInfo = userScores[test.id];
           const userScore = scoreInfo?.userScore;
           const maxScore = test.max_score;
+          const totalQuestions = questionsCount[test.id] || '?';
 
           return (
             <div key={test.id} className="test-card">
@@ -135,7 +150,7 @@ const Tests = () => {
                 <div className="test-stats-details">
                   <div className="stat-detail">
                     <span className="stat-label">Вопросов:</span>
-                    <span className="stat-value">{test.total_questions || '?'}</span>
+                    <span className="stat-value">{totalQuestions}</span>
                   </div>
                   <div className="stat-detail">
                     <span className="stat-label">Макс. баллы:</span>
@@ -178,8 +193,6 @@ const Tests = () => {
           );
         })}
       </div>
-
-      {/* Блок tests-info полностью удалён */}
     </div>
   );
 };
