@@ -13,6 +13,7 @@ class Answer(Base):
             "attempt_id",
             unique=True,
             postgresql_where=text("attempt_id IS NOT NULL"),
+            sqlite_where=text("attempt_id IS NOT NULL"),
         ),
         Index(
             "ux_answers_user_test_question_no_attempt",
@@ -21,6 +22,7 @@ class Answer(Base):
             "question_id",
             unique=True,
             postgresql_where=text("attempt_id IS NULL"),
+            sqlite_where=text("attempt_id IS NULL"),
         ),
     )
 

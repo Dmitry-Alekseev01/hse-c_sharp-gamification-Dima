@@ -77,10 +77,12 @@ async def test_get_pending_open_answers_returns_only_ungraded_open_answers(sessi
     await session.refresh(test)
 
     open_question = Question(test_id=test.id, text="Explain abstraction", points=5.0, is_open_answer=True)
+    graded_open_question = Question(test_id=test.id, text="Explain polymorphism", points=5.0, is_open_answer=True)
     mcq_question = Question(test_id=test.id, text="2+2?", points=1.0, is_open_answer=False)
-    session.add_all([open_question, mcq_question])
+    session.add_all([open_question, graded_open_question, mcq_question])
     await session.flush()
     await session.refresh(open_question)
+    await session.refresh(graded_open_question)
     await session.refresh(mcq_question)
 
     pending_answer = Answer(
@@ -93,7 +95,7 @@ async def test_get_pending_open_answers_returns_only_ungraded_open_answers(sessi
     graded_open_answer = Answer(
         user_id=student.id,
         test_id=test.id,
-        question_id=open_question.id,
+        question_id=graded_open_question.id,
         answer_payload="already checked",
         score=4.0,
         graded_by=teacher.id,

@@ -1,11 +1,13 @@
 # tests/conftest.py
-import os, sys
+import os
+import sys
 from pathlib import Path
-import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncEngine, AsyncSession
-from httpx import AsyncClient, ASGITransport
 
-# add project root so `import app` работает
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+
+# Add project root so `import app` works.
 project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
@@ -16,21 +18,19 @@ from app.core.config import settings
 from app.db.session import Base
 from app.main import app
 
-# для CI/локал тестов: по умолчанию sqlite in-memory
+# CI/local tests default to in-memory SQLite.
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 
 @pytest.fixture(scope="session")
 async def async_engine() -> AsyncEngine:
     engine = create_async_engine(TEST_DATABASE_URL, future=True, echo=False)
-    # создаём схему один раз
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
     await engine.dispose()
 
 
-# Алиасы/совместимость с тестами, которые ждут fixture 'engine'
 @pytest.fixture(scope="session")
 async def engine(async_engine: AsyncEngine) -> AsyncEngine:
     return async_engine
@@ -39,20 +39,21 @@ async def engine(async_engine: AsyncEngine) -> AsyncEngine:
 @pytest.fixture()
 async def session(async_engine: AsyncEngine) -> AsyncSession:
     """
-    Простая per-test сессия. По завершении теста делаем rollback,
-    чтобы не сохранять состояние между тестами.
+    Per-test DB session.
+    We explicitly clear all tables before each test because API handlers commit.
     """
     async_session = async_sessionmaker(async_engine, expire_on_commit=False)
     async with async_session() as s:
+        for table in reversed(Base.metadata.sorted_tables):
+            await s.execute(table.delete())
+        await s.commit()
         yield s
-        # откат: если тест что-то закоммитил, откатим изменения
         try:
             await s.rollback()
         except Exception:
             pass
 
 
-# alias для тестов, которые используют имя 'db'
 @pytest.fixture()
 async def db(session: AsyncSession):
     yield session
@@ -85,7 +86,7 @@ async def client(session: AsyncSession, monkeypatch: pytest.MonkeyPatch):
             namespace_versions[namespace] = namespace_versions.get(namespace, 0) + 1
 
     async def fake_delete_pattern(pattern: str) -> None:
-        # not required for versioned invalidation tests, keep as no-op for compatibility
+        # Not required for versioned invalidation tests.
         return None
 
     monkeypatch.setattr(materials_router, "get", fake_get, raising=False)
