@@ -31,27 +31,27 @@ async def seed_user(db, *, username: str, password: str, role: str, full_name: s
     return user
 
 
-async def test_party8_challenge_progress_and_claim_flow(client, db):
+async def test_challenge_progress_and_claim_flow(client, db):
     admin = await seed_user(
         db,
-        username="party8_admin@example.com",
+        username="challenge_admin@example.com",
         password="admin123",
         role="admin",
-        full_name="Party8 Admin",
+        full_name="Challenge Admin",
     )
     teacher = await seed_user(
         db,
-        username="party8_teacher@example.com",
+        username="challenge_teacher@example.com",
         password="teach123",
         role="teacher",
-        full_name="Party8 Teacher",
+        full_name="Challenge Teacher",
     )
     student = await seed_user(
         db,
-        username="party8_student@example.com",
+        username="challenge_student@example.com",
         password="stud123",
         role="user",
-        full_name="Party8 Student",
+        full_name="Challenge Student",
     )
 
     admin_token = await login(client, admin.username, "admin123")
@@ -62,7 +62,7 @@ async def test_party8_challenge_progress_and_claim_flow(client, db):
         "/api/v1/analytics/challenges",
         headers=auth_headers(admin_token),
         json={
-            "code": "party8_daily_answer",
+            "code": "daily_answer_case",
             "title": "Daily Answer x1",
             "description": "Submit at least one answer today",
             "period_type": "daily",
@@ -79,7 +79,7 @@ async def test_party8_challenge_progress_and_claim_flow(client, db):
         "/api/v1/analytics/challenges",
         headers=auth_headers(teacher_token),
         json={
-            "code": "party8_forbidden_create",
+            "code": "forbidden_create_case",
             "title": "Forbidden",
             "period_type": "daily",
             "event_type": "answer_submitted",
@@ -92,7 +92,7 @@ async def test_party8_challenge_progress_and_claim_flow(client, db):
         "/api/v1/tests/",
         headers=auth_headers(teacher_token),
         json={
-            "title": "Party8 challenge test",
+            "title": "Challenge flow test",
             "description": "challenge progress trigger",
             "published": True,
         },

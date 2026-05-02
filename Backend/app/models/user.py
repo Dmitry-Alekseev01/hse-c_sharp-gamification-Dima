@@ -84,3 +84,10 @@ class User(Base):
         lazy="selectin",
         cascade="all, delete-orphan",
     )
+
+    rewards = relationship(
+        "UserReward",
+        back_populates="user",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )

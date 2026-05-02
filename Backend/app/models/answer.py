@@ -1,9 +1,28 @@
-from sqlalchemy import Column, Integer, Text, Float, ForeignKey, DateTime, func
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Index, Integer, Text, func, text
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
 class Answer(Base):
     __tablename__ = "answers"
+    __table_args__ = (
+        Index(
+            "ux_answers_user_test_question_attempt",
+            "user_id",
+            "test_id",
+            "question_id",
+            "attempt_id",
+            unique=True,
+            postgresql_where=text("attempt_id IS NOT NULL"),
+        ),
+        Index(
+            "ux_answers_user_test_question_no_attempt",
+            "user_id",
+            "test_id",
+            "question_id",
+            unique=True,
+            postgresql_where=text("attempt_id IS NULL"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)

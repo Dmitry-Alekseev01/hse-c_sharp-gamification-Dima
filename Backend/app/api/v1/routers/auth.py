@@ -1,10 +1,11 @@
 # app/api/v1/routers/auth.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.security import create_access_token, get_current_user
+from app.core.config import settings
+from app.core.security import build_password_version, create_access_token, get_current_user
 from app.models.user import User
 from app.repositories import auth_repo
 from app.schemas.auth import LoginRequest, TokenRead
@@ -13,34 +14,53 @@ from app.schemas.user import UserRead, UserCreate
 router = APIRouter()
 
 
+def _clear_admin_session_cookie(response: Response) -> None:
+    # Admin panel auth is isolated from API bearer auth, but we still clear
+    # admin cookie on successful API auth transitions to avoid cross-user carry-over.
+    response.delete_cookie("admin_session", path="/")
+    admin_path = settings.admin_base_url.rstrip("/") or "/admin"
+    response.delete_cookie("admin_session", path=admin_path)
+
+
 @router.post("/token", response_model=TokenRead)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+async def login_for_access_token(
+    response: Response,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+):
     user = await auth_repo.authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password",
                             headers={"WWW-Authenticate": "Bearer"})
-    access_token = create_access_token({"sub": user.username, "role": user.role})
+    access_token = create_access_token(
+        {"sub": user.username, "role": user.role, "pwdv": build_password_version(user.password_hash)}
+    )
+    _clear_admin_session_cookie(response)
     return TokenRead(access_token=access_token, token_type="bearer")
 
 
 @router.post("/login", response_model=TokenRead)
-async def login_with_json(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login_with_json(payload: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
     user = await auth_repo.authenticate_user(db, payload.username, payload.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
-    access_token = create_access_token({"sub": user.username, "role": user.role})
+    access_token = create_access_token(
+        {"sub": user.username, "role": user.role, "pwdv": build_password_version(user.password_hash)}
+    )
+    _clear_admin_session_cookie(response)
     return TokenRead(access_token=access_token, token_type="bearer")
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-async def register_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
+async def register_user(payload: UserCreate, response: Response, db: AsyncSession = Depends(get_db)):
     from app.repositories.user_repo import get_user_by_username
     if await get_user_by_username(db, payload.username):
         raise HTTPException(status_code=400, detail="Username already taken")
     user = await auth_repo.create_user(db, payload.username, payload.password, payload.full_name)
+    _clear_admin_session_cookie(response)
     return user
 
 

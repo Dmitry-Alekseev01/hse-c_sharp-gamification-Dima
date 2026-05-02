@@ -32,20 +32,20 @@ async def seed_user(db, *, username: str, password: str, role: str, full_name: s
     return user
 
 
-async def test_party7_achievements_and_points_ledger_end_to_end(client, db):
+async def test_achievements_and_points_ledger_end_to_end(client, db):
     teacher = await seed_user(
         db,
-        username="party7_teacher@example.com",
+        username="gamification_teacher@example.com",
         password="teach123",
         role="teacher",
-        full_name="Party7 Teacher",
+        full_name="Gamification Teacher",
     )
     student = await seed_user(
         db,
-        username="party7_student@example.com",
+        username="gamification_student@example.com",
         password="stud123",
         role="user",
-        full_name="Party7 Student",
+        full_name="Gamification Student",
     )
 
     teacher_token = await login(client, teacher.username, "teach123")
@@ -55,7 +55,7 @@ async def test_party7_achievements_and_points_ledger_end_to_end(client, db):
         "/api/v1/tests/",
         headers=auth_headers(teacher_token),
         json={
-            "title": "Party7 MCQ",
+            "title": "Gamification MCQ",
             "description": "points + achievements flow",
             "published": True,
         },
@@ -129,37 +129,44 @@ async def test_party7_achievements_and_points_ledger_end_to_end(client, db):
     assert any(item["reason_code"] == "answer_auto_graded" for item in ledger_payload["items"])
 
 
-async def test_party71_teacher_admin_student_achievements_and_ledger_access(client, db):
+async def test_teacher_admin_student_achievements_and_ledger_access(client, db):
     teacher = await seed_user(
         db,
-        username="party71_teacher@example.com",
+        username="access_teacher@example.com",
         password="teach123",
         role="teacher",
-        full_name="Party71 Teacher",
+        full_name="Access Teacher",
     )
     admin = await seed_user(
         db,
-        username="party71_admin@example.com",
+        username="access_admin@example.com",
         password="admin123",
         role="admin",
-        full_name="Party71 Admin",
+        full_name="Access Admin",
     )
     student = await seed_user(
         db,
-        username="party71_student@example.com",
+        username="access_student@example.com",
         password="stud123",
         role="user",
-        full_name="Party71 Student",
+        full_name="Access Student",
+    )
+    unmanaged_student = await seed_user(
+        db,
+        username="access_unmanaged@example.com",
+        password="stud123",
+        role="user",
+        full_name="Access Unmanaged",
     )
     outsider_teacher = await seed_user(
         db,
-        username="party71_outsider@example.com",
+        username="access_outsider@example.com",
         password="teach123",
         role="teacher",
-        full_name="Party71 Outsider",
+        full_name="Access Outsider",
     )
 
-    group = await group_repo.create_group(db, "party71-group", teacher.id)
+    group = await group_repo.create_group(db, "access-group", teacher.id)
     await group_repo.add_user_to_group(db, group, student.id)
 
     await analytics_repo.apply_points_transaction(
@@ -167,7 +174,7 @@ async def test_party71_teacher_admin_student_achievements_and_ledger_access(clie
         user_id=student.id,
         points_delta=130.0,
         mark_active=True,
-        reason_code="party71_seed_points",
+        reason_code="seed_points_access_case",
         source_type="test_seed",
     )
 
@@ -192,7 +199,31 @@ async def test_party71_teacher_admin_student_achievements_and_ledger_access(clie
     )
     assert teacher_ledger_response.status_code == 200, teacher_ledger_response.text
     teacher_ledger = teacher_ledger_response.json()
-    assert any(item["reason_code"] == "party71_seed_points" for item in teacher_ledger["items"])
+    assert any(item["reason_code"] == "seed_points_access_case" for item in teacher_ledger["items"])
+
+    teacher_user_analytics_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}",
+        headers=auth_headers(teacher_token),
+    )
+    assert teacher_user_analytics_response.status_code == 200, teacher_user_analytics_response.text
+
+    teacher_user_progress_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/progress",
+        headers=auth_headers(teacher_token),
+    )
+    assert teacher_user_progress_response.status_code == 200, teacher_user_progress_response.text
+
+    teacher_user_performance_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/performance",
+        headers=auth_headers(teacher_token),
+    )
+    assert teacher_user_performance_response.status_code == 200, teacher_user_performance_response.text
+
+    teacher_unmanaged_user_response = await client.get(
+        f"/api/v1/analytics/user/{unmanaged_student.id}",
+        headers=auth_headers(teacher_token),
+    )
+    assert teacher_unmanaged_user_response.status_code == 403, teacher_unmanaged_user_response.text
 
     admin_achievements_response = await client.get(
         f"/api/v1/analytics/user/{student.id}/achievements",
@@ -206,6 +237,24 @@ async def test_party71_teacher_admin_student_achievements_and_ledger_access(clie
     )
     assert admin_ledger_response.status_code == 200, admin_ledger_response.text
 
+    admin_user_analytics_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}",
+        headers=auth_headers(admin_token),
+    )
+    assert admin_user_analytics_response.status_code == 200, admin_user_analytics_response.text
+
+    admin_user_progress_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/progress",
+        headers=auth_headers(admin_token),
+    )
+    assert admin_user_progress_response.status_code == 200, admin_user_progress_response.text
+
+    admin_user_performance_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/performance",
+        headers=auth_headers(admin_token),
+    )
+    assert admin_user_performance_response.status_code == 200, admin_user_performance_response.text
+
     student_forbidden_response = await client.get(
         f"/api/v1/analytics/user/{student.id}/achievements",
         headers=auth_headers(student_token),
@@ -217,3 +266,21 @@ async def test_party71_teacher_admin_student_achievements_and_ledger_access(clie
         headers=auth_headers(outsider_token),
     )
     assert outsider_forbidden_response.status_code == 403, outsider_forbidden_response.text
+
+    outsider_user_analytics_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}",
+        headers=auth_headers(outsider_token),
+    )
+    assert outsider_user_analytics_response.status_code == 403, outsider_user_analytics_response.text
+
+    outsider_user_progress_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/progress",
+        headers=auth_headers(outsider_token),
+    )
+    assert outsider_user_progress_response.status_code == 403, outsider_user_progress_response.text
+
+    outsider_user_performance_response = await client.get(
+        f"/api/v1/analytics/user/{student.id}/performance",
+        headers=auth_headers(outsider_token),
+    )
+    assert outsider_user_performance_response.status_code == 403, outsider_user_performance_response.text

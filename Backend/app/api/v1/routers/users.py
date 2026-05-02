@@ -5,7 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.security import get_current_user, require_roles
-from app.schemas.user import AdminUserCreate, UserProfileUpdate, UserRead, UserRoleUpdate
+from app.schemas.user import (
+    AdminUserCreate,
+    AdminUserPasswordReset,
+    PasswordChangeRead,
+    UserPasswordChange,
+    UserProfileUpdate,
+    UserRead,
+    UserRoleUpdate,
+)
 from app.services import user_service
 from app.repositories import user_repo
 from app.models.user import User as UserModel
@@ -72,6 +80,26 @@ async def update_my_profile(
     return user
 
 
+@router.patch("/me/password", response_model=PasswordChangeRead, status_code=status.HTTP_200_OK)
+async def change_my_password(
+    payload: UserPasswordChange,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
+):
+    try:
+        await user_service.change_user_password(
+            db,
+            current_user.id,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return PasswordChangeRead(detail="Password updated successfully")
+
+
 @router.get("/{user_id}", response_model=UserRead)
 async def get_user(
     user_id: int,
@@ -124,3 +152,43 @@ async def update_user_role(
     await db.flush()
     await db.refresh(user)
     return user
+
+
+@router.patch("/{user_id}/password", response_model=PasswordChangeRead, status_code=status.HTTP_200_OK)
+async def reset_user_password_by_admin(
+    user_id: int,
+    payload: AdminUserPasswordReset,
+    db: AsyncSession = Depends(get_db),
+    current_admin: UserModel = Depends(require_roles("admin")),
+):
+    if user_id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use /api/v1/users/me/password to change your own password",
+        )
+    try:
+        await user_service.admin_reset_user_password(
+            db,
+            user_id,
+            new_password=payload.new_password,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return PasswordChangeRead(detail="Password updated successfully")
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_by_admin(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin: UserModel = Depends(require_roles("admin")),
+):
+    if user_id == current_admin.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin cannot delete own account")
+    try:
+        await user_service.delete_user(db, user_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return {}

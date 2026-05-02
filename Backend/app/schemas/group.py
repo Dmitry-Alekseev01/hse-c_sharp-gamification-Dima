@@ -5,6 +5,10 @@ class GroupCreate(BaseModel):
     name: str
 
 
+class GroupUpdate(BaseModel):
+    name: str | None = None
+
+
 class GroupRead(BaseModel):
     id: int
     name: str

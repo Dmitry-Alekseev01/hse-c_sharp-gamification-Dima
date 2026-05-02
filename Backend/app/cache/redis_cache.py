@@ -22,6 +22,7 @@ TEST_SUMMARY_TTL = 60
 LEADERBOARD_TTL = 30
 QUESTION_LIST_TTL = 120
 TEST_CONTENT_TTL = 120
+ANSWERS_BY_TEST_TTL = 90
 
 def get_redis_client() -> aioredis.Redis:
     global _redis
@@ -155,6 +156,16 @@ def cache_key_question_list(test_id: int, limit: int, offset: int, level_id: int
 
 def cache_key_test_content(test_id: int, level_id: int = 0, version: int = 0) -> str:
     return f"tests:content:v{version}:{level_id}:{test_id}"
+
+
+def cache_key_answers_for_test(
+    test_id: int,
+    user_id: int,
+    limit: int,
+    offset: int,
+    version: int = 0,
+) -> str:
+    return f"answers:v{version}:test:{test_id}:user:{user_id}:{limit}:{offset}"
 
 @asynccontextmanager
 async def redis_lock(name: str, timeout: int = 10):

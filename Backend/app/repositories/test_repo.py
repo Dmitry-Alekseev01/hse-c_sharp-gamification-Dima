@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
@@ -24,23 +26,11 @@ async def _sync_test_material_links(
     session,
     test: Test,
     *,
-    material_id: int | None = None,
     material_ids: list[int] | None = None,
 ) -> None:
     resolved_material_ids = list(dict.fromkeys([mid for mid in (material_ids or []) if mid is not None]))
-    if material_id is not None and material_id not in resolved_material_ids:
-        resolved_material_ids.append(material_id)
-
     materials = await _load_materials_by_ids(session, resolved_material_ids)
     test.materials = materials
-
-    fetched_ids = [item.id for item in materials]
-    if material_id is not None and material_id in fetched_ids:
-        test.material_id = material_id
-    elif fetched_ids:
-        test.material_id = fetched_ids[0]
-    else:
-        test.material_id = None
 
 
 async def get_test(session, test_id: int):
@@ -63,14 +53,168 @@ async def list_tests(
     res = await session.execute(q)
     return res.scalars().all()
 
+
+async def get_user_test_state_map(
+    session,
+    *,
+    user_id: int,
+    tests: list[Test],
+) -> dict[int, dict[str, Any]]:
+    if not tests:
+        return {}
+
+    tests_by_id = {int(test.id): test for test in tests}
+    test_ids = list(tests_by_id.keys())
+
+    question_counts_rows = (
+        await session.execute(
+            select(Question.test_id, func.count(Question.id))
+            .where(Question.test_id.in_(test_ids))
+            .group_by(Question.test_id)
+        )
+    ).all()
+    question_counts = {int(test_id): int(total or 0) for test_id, total in question_counts_rows}
+
+    attempts_rows = (
+        await session.execute(
+            select(
+                TestAttempt.test_id,
+                func.sum(case((TestAttempt.status == "completed", 1), else_=0)).label("completed_attempts"),
+                func.max(case((TestAttempt.status == "in_progress", TestAttempt.id), else_=None)).label(
+                    "active_attempt_id"
+                ),
+            )
+            .where(
+                TestAttempt.user_id == user_id,
+                TestAttempt.test_id.in_(test_ids),
+            )
+            .group_by(TestAttempt.test_id)
+        )
+    ).all()
+    attempts_map = {
+        int(test_id): {
+            "completed_attempts": int(completed_attempts or 0),
+            "active_attempt_id": int(active_attempt_id) if active_attempt_id is not None else None,
+        }
+        for test_id, completed_attempts, active_attempt_id in attempts_rows
+    }
+
+    latest_completed_subquery = (
+        select(
+            TestAttempt.test_id.label("test_id"),
+            TestAttempt.score.label("score"),
+            TestAttempt.max_score.label("max_score"),
+            TestAttempt.completed_at.label("completed_at"),
+            func.row_number()
+            .over(
+                partition_by=TestAttempt.test_id,
+                order_by=(TestAttempt.completed_at.desc(), TestAttempt.id.desc()),
+            )
+            .label("row_num"),
+        )
+        .where(
+            TestAttempt.user_id == user_id,
+            TestAttempt.test_id.in_(test_ids),
+            TestAttempt.status == "completed",
+        )
+        .subquery()
+    )
+    latest_completed_rows = (
+        await session.execute(
+            select(
+                latest_completed_subquery.c.test_id,
+                latest_completed_subquery.c.score,
+                latest_completed_subquery.c.max_score,
+                latest_completed_subquery.c.completed_at,
+            ).where(latest_completed_subquery.c.row_num == 1)
+        )
+    ).all()
+    latest_completed_map = {
+        int(test_id): {
+            "score": float(score) if score is not None else None,
+            "max_score": float(max_score) if max_score is not None else None,
+            "completed_at": completed_at,
+        }
+        for test_id, score, max_score, completed_at in latest_completed_rows
+    }
+
+    legacy_answers_rows = (
+        await session.execute(
+            select(
+                Answer.test_id,
+                func.count(Answer.id).label("answers_count"),
+                func.coalesce(func.sum(Answer.score), 0).label("score_sum"),
+            )
+            .where(
+                Answer.user_id == user_id,
+                Answer.test_id.in_(test_ids),
+                Answer.attempt_id.is_(None),
+            )
+            .group_by(Answer.test_id)
+        )
+    ).all()
+    legacy_answers_map = {
+        int(test_id): {
+            "answers_count": int(answers_count or 0),
+            "score_sum": float(score_sum or 0.0),
+        }
+        for test_id, answers_count, score_sum in legacy_answers_rows
+    }
+
+    result: dict[int, dict[str, Any]] = {}
+    for test_id in test_ids:
+        test = tests_by_id[test_id]
+        max_attempts = max(int(test.max_attempts or 1), 1)
+
+        attempts_data = attempts_map.get(test_id, {})
+        completed_attempts = int(attempts_data.get("completed_attempts") or 0)
+        active_attempt_id = attempts_data.get("active_attempt_id")
+
+        legacy_answers = legacy_answers_map.get(test_id, {})
+        has_legacy_answers = int(legacy_answers.get("answers_count") or 0) > 0
+        if completed_attempts == 0 and has_legacy_answers:
+            # Backward-compatible fallback for datasets created before attempt tracking.
+            completed_attempts = 1
+
+        latest_completed = latest_completed_map.get(test_id, {})
+        user_score = latest_completed.get("score")
+        user_max_score = latest_completed.get("max_score")
+        latest_completed_at = latest_completed.get("completed_at")
+
+        if user_score is None and has_legacy_answers:
+            user_score = float(legacy_answers.get("score_sum") or 0.0)
+            if test.max_score is not None:
+                user_max_score = float(test.max_score)
+
+        if active_attempt_id is not None:
+            user_status = "in_progress"
+        elif completed_attempts > 0:
+            user_status = "completed"
+        else:
+            user_status = "not_started"
+
+        result[test_id] = {
+            "total_questions": int(question_counts.get(test_id, 0)),
+            "user_status": user_status,
+            "has_active_attempt": active_attempt_id is not None,
+            "active_attempt_id": active_attempt_id,
+            "completed_attempts": completed_attempts,
+            "remaining_attempts": max(max_attempts - completed_attempts, 0),
+            "user_score": float(user_score) if user_score is not None else None,
+            "user_max_score": float(user_max_score) if user_max_score is not None else None,
+            "latest_completed_at": latest_completed_at,
+        }
+
+    return result
+
 async def create_test(
     session,
     title: str,
     description: str | None = None,
     time_limit_minutes: int | None = None,
     max_score: int | None = None,
+    max_attempts: int = 1,
     published: bool = False,
-    material_id: int | None = None,
     material_ids: list[int] | None = None,
     deadline=None,
     author_id: int | None = None,
@@ -81,8 +225,8 @@ async def create_test(
         description=description,
         time_limit_minutes=time_limit_minutes,
         max_score=max_score,
+        max_attempts=max_attempts,
         published=published,
-        material_id=material_id,
         deadline=deadline,
         author_id=author_id,
         required_level_id=required_level_id,
@@ -97,7 +241,6 @@ async def create_test(
     await _sync_test_material_links(
         session,
         loaded_test,
-        material_id=material_id,
         material_ids=material_ids,
     )
     await session.flush()
@@ -113,8 +256,8 @@ async def update_test(
     description: str | None = None,
     time_limit_minutes: int | None = None,
     max_score: int | None = None,
+    max_attempts: int | None = None,
     published: bool | None = None,
-    material_id: int | None | object = _UNSET,
     material_ids: list[int] | None | object = _UNSET,
     deadline=None,
     required_level_id: int | None = None,
@@ -131,20 +274,19 @@ async def update_test(
         test.time_limit_minutes = time_limit_minutes
     if max_score is not None:
         test.max_score = max_score
+    if max_attempts is not None:
+        test.max_attempts = max_attempts
     if published is not None:
         test.published = published
-    if material_id is not _UNSET:
-        test.material_id = material_id
     if deadline is not None:
         test.deadline = deadline
     if required_level_id is not None:
         test.required_level_id = required_level_id
-    if material_ids is not _UNSET or material_id is not _UNSET:
+    if material_ids is not _UNSET:
         await _sync_test_material_links(
             session,
             test,
-            material_id=None if material_id is _UNSET else material_id,
-            material_ids=None if material_ids is _UNSET else material_ids,
+            material_ids=material_ids,
         )
 
     await session.flush()

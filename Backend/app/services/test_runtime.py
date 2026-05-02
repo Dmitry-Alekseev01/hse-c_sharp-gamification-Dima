@@ -85,8 +85,9 @@ async def resolve_attempt_for_user(session, test: Test, user_id: int, attempt_id
             raise AttemptPolicyError("Attempt time limit has been exceeded")
         return active_attempt
 
-    latest_attempt = await test_attempt_repo.get_latest_attempt_for_user_test(session, user_id, test.id)
-    if latest_attempt is not None and latest_attempt.status == "completed":
-        raise AttemptPolicyError("Test has already been completed")
+    max_attempts = int(test.max_attempts or 1)
+    completed_attempts = await test_attempt_repo.count_completed_attempts_for_user_test(session, user_id, test.id)
+    if completed_attempts >= max(max_attempts, 1):
+        raise AttemptPolicyError("No attempts remaining for this test")
 
     return await test_attempt_repo.create_attempt(session, user_id, test.id)

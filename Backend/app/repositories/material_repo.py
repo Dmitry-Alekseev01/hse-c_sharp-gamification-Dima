@@ -1,9 +1,10 @@
 """
 Repository for Material entity.
 """
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+from app.models.level import Level
 from app.models.material import Material
 from app.models.material_attachment import MaterialAttachment
 from app.models.material_block import MaterialBlock
@@ -59,6 +60,161 @@ async def list_materials(session, limit: int = 100, offset: int = 0):
     q = select(Material).options(*_material_load_options()).limit(limit).offset(offset)
     res = await session.execute(q)
     return res.scalars().all()
+
+
+async def count_visible_materials_for_user(
+    session,
+    *,
+    role: str,
+    total_points: float,
+) -> int:
+    stmt = select(func.count(Material.id))
+    if role not in {"teacher", "admin"}:
+        stmt = (
+            stmt.select_from(Material)
+            .outerjoin(Level, Material.required_level_id == Level.id)
+            .where(
+                or_(
+                    Material.required_level_id.is_(None),
+                    Level.id.is_(None),
+                    Level.required_points <= float(total_points),
+                )
+            )
+        )
+    count = await session.scalar(stmt)
+    return int(count or 0)
+
+
+async def list_material_blocks(session, material_id: int):
+    stmt = (
+        select(MaterialBlock)
+        .where(MaterialBlock.material_id == material_id)
+        .order_by(MaterialBlock.order_index.asc(), MaterialBlock.id.asc())
+    )
+    res = await session.execute(stmt)
+    return res.scalars().all()
+
+
+async def get_material_block(session, block_id: int) -> MaterialBlock | None:
+    return await session.get(MaterialBlock, block_id)
+
+
+async def create_material_block(
+    session,
+    *,
+    material_id: int,
+    block_type: str,
+    title: str | None = None,
+    body: str | None = None,
+    url: str | None = None,
+    order_index: int = 0,
+) -> MaterialBlock:
+    block = MaterialBlock(
+        material_id=material_id,
+        block_type=block_type,
+        title=title,
+        body=body,
+        url=url,
+        order_index=order_index,
+    )
+    session.add(block)
+    await session.flush()
+    await session.refresh(block)
+    return block
+
+
+async def update_material_block(session, block_id: int, **changes) -> MaterialBlock | None:
+    block = await get_material_block(session, block_id)
+    if block is None:
+        return None
+    if "block_type" in changes:
+        block.block_type = changes["block_type"]
+    if "title" in changes:
+        block.title = changes["title"]
+    if "body" in changes:
+        block.body = changes["body"]
+    if "url" in changes:
+        block.url = changes["url"]
+    if "order_index" in changes:
+        block.order_index = changes["order_index"]
+    await session.flush()
+    await session.refresh(block)
+    return block
+
+
+async def delete_material_block(session, block_id: int) -> bool:
+    block = await get_material_block(session, block_id)
+    if block is None:
+        return False
+    await session.delete(block)
+    await session.flush()
+    return True
+
+
+async def list_material_attachments(session, material_id: int):
+    stmt = (
+        select(MaterialAttachment)
+        .where(MaterialAttachment.material_id == material_id)
+        .order_by(MaterialAttachment.order_index.asc(), MaterialAttachment.id.asc())
+    )
+    res = await session.execute(stmt)
+    return res.scalars().all()
+
+
+async def get_material_attachment(session, attachment_id: int) -> MaterialAttachment | None:
+    return await session.get(MaterialAttachment, attachment_id)
+
+
+async def create_material_attachment(
+    session,
+    *,
+    material_id: int,
+    title: str,
+    file_url: str,
+    file_kind: str = "other",
+    order_index: int = 0,
+    is_downloadable: bool = True,
+) -> MaterialAttachment:
+    attachment = MaterialAttachment(
+        material_id=material_id,
+        title=title,
+        file_url=file_url,
+        file_kind=file_kind,
+        order_index=order_index,
+        is_downloadable=is_downloadable,
+    )
+    session.add(attachment)
+    await session.flush()
+    await session.refresh(attachment)
+    return attachment
+
+
+async def update_material_attachment(session, attachment_id: int, **changes) -> MaterialAttachment | None:
+    attachment = await get_material_attachment(session, attachment_id)
+    if attachment is None:
+        return None
+    if "title" in changes:
+        attachment.title = changes["title"]
+    if "file_url" in changes:
+        attachment.file_url = changes["file_url"]
+    if "file_kind" in changes:
+        attachment.file_kind = changes["file_kind"]
+    if "order_index" in changes:
+        attachment.order_index = changes["order_index"]
+    if "is_downloadable" in changes:
+        attachment.is_downloadable = changes["is_downloadable"]
+    await session.flush()
+    await session.refresh(attachment)
+    return attachment
+
+
+async def delete_material_attachment(session, attachment_id: int) -> bool:
+    attachment = await get_material_attachment(session, attachment_id)
+    if attachment is None:
+        return False
+    await session.delete(attachment)
+    await session.flush()
+    return True
 
 
 async def create_material(

@@ -36,61 +36,61 @@ async def seed_user(db, *, username: str, password: str, role: str, full_name: s
     return user
 
 
-async def test_party9_leaderboard_scope_and_period(client, db):
+async def test_leaderboard_scope_and_period(client, db):
     admin = await seed_user(
         db,
-        username="party9_admin@example.com",
+        username="leaderboard_admin@example.com",
         password="admin123",
         role="admin",
-        full_name="Party9 Admin",
+        full_name="Leaderboard Admin",
     )
     teacher = await seed_user(
         db,
-        username="party9_teacher@example.com",
+        username="leaderboard_teacher@example.com",
         password="teach123",
         role="teacher",
-        full_name="Party9 Teacher",
+        full_name="Leaderboard Teacher",
     )
     student_group = await seed_user(
         db,
-        username="party9_group_student@example.com",
+        username="leaderboard_group_student@example.com",
         password="stud123",
         role="user",
-        full_name="Party9 Group Student",
+        full_name="Leaderboard Group Student",
     )
     student_global = await seed_user(
         db,
-        username="party9_global_student@example.com",
+        username="leaderboard_global_student@example.com",
         password="stud123",
         role="user",
-        full_name="Party9 Global Student",
+        full_name="Leaderboard Global Student",
     )
 
-    group = await group_repo.create_group(db, "party9-group", teacher.id)
+    group = await group_repo.create_group(db, "leaderboard-group", teacher.id)
     await group_repo.add_user_to_group(db, group, student_group.id)
 
     await analytics_repo.apply_points_transaction(
         db,
         user_id=student_group.id,
         points_delta=50.0,
-        reason_code="party9_seed",
+        reason_code="seed_points_group",
         source_type="seed",
-        idempotency_key="party9_seed_group",
+        idempotency_key="seed_points_group",
     )
     await analytics_repo.apply_points_transaction(
         db,
         user_id=student_global.id,
         points_delta=200.0,
-        reason_code="party9_seed",
+        reason_code="seed_points_global",
         source_type="seed",
-        idempotency_key="party9_seed_global",
+        idempotency_key="seed_points_global",
     )
 
     global_ledger = (
         await db.execute(
             select(PointsLedger).where(
                 PointsLedger.user_id == student_global.id,
-                PointsLedger.idempotency_key == "party9_seed_global",
+                PointsLedger.idempotency_key == "seed_points_global",
             )
         )
     ).scalars().first()
@@ -106,8 +106,8 @@ async def test_party9_leaderboard_scope_and_period(client, db):
         "/api/v1/analytics/seasons",
         headers=auth_headers(admin_token),
         json={
-            "code": "party9_spring",
-            "title": "Party 9 Spring",
+            "code": "leaderboard_spring",
+            "title": "Leaderboard Spring",
             "starts_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
             "ends_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
             "is_active": True,

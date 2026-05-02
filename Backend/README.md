@@ -53,3 +53,39 @@ Async backend for the learning platform (FastAPI + PostgreSQL + Redis + Alembic)
 - Prompting behavior:
   - rewrites assignment text into a gamified/anime-style narrative;
   - keeps original assignment logic and numeric constraints unchanged.
+
+## Admin Panel
+
+- URL: `http://localhost:8000/admin`
+- Access: only users with `role=admin`
+- Config:
+  - `ADMIN_ENABLED` - turn admin panel on/off;
+  - `ADMIN_BASE_URL` - custom panel path (default `/admin`);
+  - `ADMIN_SESSION_MAX_AGE_SECONDS`, `ADMIN_SESSION_HTTPS_ONLY`, `ADMIN_SESSION_SAME_SITE` - admin session cookie policy;
+  - `ADMIN_SESSION_SECRET_KEY` - dedicated admin session secret;
+  - `JWT_SECRET_KEY` - dedicated JWT signing secret;
+  - `ADMIN_ALLOWED_IPS` - optional allowlist for admin access (IPv4/IPv6/CIDR).
+  - `ADMIN_MFA_*` - optional TOTP-based MFA for admin login.
+- Security model:
+  - admin session is isolated from API bearer auth;
+  - non-admin users cannot authenticate to the panel;
+  - `/admin` is rate-limited separately from public API paths;
+  - admin login has Redis-backed brute-force protection (`ADMIN_LOGIN_*`);
+  - if Redis is unavailable, admin login is blocked (fail-closed).
+- MFA:
+  - enable with `ADMIN_MFA_ENABLED=true` and valid `ADMIN_MFA_TOTP_SECRET` (base32);
+  - current login form can pass MFA code as password suffix: `<password>::<123456>`.
+- Production hardening:
+  - set `APP_ENV=production`;
+  - set `ADMIN_SESSION_HTTPS_ONLY=true`;
+  - use strong `JWT_SECRET_KEY` and `ADMIN_SESSION_SECRET_KEY` (32+ chars);
+  - set `ADMIN_ALLOWED_IPS` if admin panel should be restricted by network.
+- Current scope:
+  - `Users` view is read-only;
+  - `Levels`, `Materials`, `Tests`, `Questions`, `Choices` support CRUD with form validation;
+  - operational entities (`Analytics`, `Answers`, `Attempts`, `Points Ledger`, `AI Jobs`,
+    `Challenges`, `Rewards`, `Seasons`, `Leaderboard snapshots`, groups) are read-only.
+- Safety:
+  - batch actions are disabled in admin views;
+  - sensitive user field `password_hash` is not exposed in the panel;
+  - create/edit/delete operations are logged via `admin_audit` structured logs.

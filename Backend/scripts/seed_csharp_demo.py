@@ -508,7 +508,6 @@ async def _create_tests_with_questions(
         test.max_score = item["max_score"]
         test.published = True
         test.deadline = deadline_at
-        test.material_id = item["material"].id
         test.author_id = teacher.id
         test.required_level_id = required_level_id
 
@@ -521,9 +520,7 @@ async def _create_tests_with_questions(
             await session.execute(delete(Choice).where(Choice.question_id.in_(existing_question_ids)))
             await session.execute(delete(Question).where(Question.id.in_(existing_question_ids)))
         await session.execute(delete(material_test_links).where(material_test_links.c.test_id == test.id))
-        await session.execute(
-            material_test_links.insert().values(material_id=item["material"].id, test_id=test.id)
-        )
+        test.materials = [item["material"]]
 
         questions = [
             Question(

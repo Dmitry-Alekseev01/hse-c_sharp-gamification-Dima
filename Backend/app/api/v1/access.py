@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.material import Material
 from app.models.test_ import Test
 from app.models.user import User
-from app.repositories import analytics_repo, level_repo, material_repo, test_repo
+from app.repositories import analytics_repo, group_repo, level_repo, material_repo, test_repo, user_repo
 
 
 def can_manage_test(current_user: User, test: Test) -> bool:
@@ -47,20 +47,32 @@ async def get_manageable_material(db: AsyncSession, material_id: int, current_us
     return material
 
 
-async def get_visible_test(db: AsyncSession, test_id: int, current_user: User) -> Test:
+async def get_visible_test(
+    db: AsyncSession,
+    test_id: int,
+    current_user: User,
+    *,
+    total_points: float | None = None,
+) -> Test:
     test = await get_test_or_404(db, test_id)
     if can_manage_test(current_user, test):
         return test
-    if test.published and await is_unlocked_test(db, current_user, test):
+    if test.published and await is_unlocked_test(db, current_user, test, total_points=total_points):
         return test
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
 
 
-async def get_visible_material(db: AsyncSession, material_id: int, current_user: User) -> Material:
+async def get_visible_material(
+    db: AsyncSession,
+    material_id: int,
+    current_user: User,
+    *,
+    total_points: float | None = None,
+) -> Material:
     material = await get_material_or_404(db, material_id)
     if can_manage_material(current_user, material):
         return material
-    if await is_unlocked_material(db, current_user, material):
+    if await is_unlocked_material(db, current_user, material, total_points=total_points):
         return material
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
 
@@ -85,19 +97,58 @@ async def ensure_level_exists_or_400(db: AsyncSession, level_id: int | None) -> 
         )
 
 
-async def is_unlocked_test(db: AsyncSession, current_user: User, test: Test) -> bool:
+async def ensure_teacher_or_admin_can_access_user(
+    db: AsyncSession,
+    current_user: User,
+    user_id: int,
+) -> None:
+    """
+    Access matrix for user-scoped analytics:
+    - admin: can access any user
+    - teacher: can access self and users from teacher-managed groups
+    - user: can access only self
+    """
+    target_user = await user_repo.get_user_by_id(db, user_id)
+    if target_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if current_user.role == "admin":
+        return
+    if current_user.id == user_id:
+        return
+    if current_user.role == "teacher":
+        if await group_repo.teacher_manages_user(db, current_user.id, user_id):
+            return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+
+async def is_unlocked_test(
+    db: AsyncSession,
+    current_user: User,
+    test: Test,
+    *,
+    total_points: float | None = None,
+) -> bool:
     if current_user.role in {"teacher", "admin"}:
         return True
     if test.required_level is None:
         return True
-    total_points, _ = await get_user_level_context(db, current_user)
+    if total_points is None:
+        total_points, _ = await get_user_level_context(db, current_user)
     return float(test.required_level.required_points or 0.0) <= total_points
 
 
-async def is_unlocked_material(db: AsyncSession, current_user: User, material: Material) -> bool:
+async def is_unlocked_material(
+    db: AsyncSession,
+    current_user: User,
+    material: Material,
+    *,
+    total_points: float | None = None,
+) -> bool:
     if current_user.role in {"teacher", "admin"}:
         return True
     if material.required_level is None:
         return True
-    total_points, _ = await get_user_level_context(db, current_user)
+    if total_points is None:
+        total_points, _ = await get_user_level_context(db, current_user)
     return float(material.required_level.required_points or 0.0) <= total_points

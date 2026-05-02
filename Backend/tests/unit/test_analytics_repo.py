@@ -188,3 +188,4 @@ async def test_user_achievements_are_persisted(db):
     achievements = await analytics_repo.list_user_achievements(db, user.id)
     earned_codes = {item["code"] for item in achievements if item["earned"]}
     assert "first_steps" in earned_codes
+

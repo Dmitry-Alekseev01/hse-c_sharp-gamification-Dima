@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, ForeignKey, DateTime, String, func
+from sqlalchemy import CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -6,6 +6,19 @@ from app.db.session import Base
 
 class TestAttempt(Base):
     __tablename__ = "test_attempts"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('in_progress', 'completed')",
+            name="ck_test_attempts_status_valid",
+        ),
+        Index(
+            "ux_test_attempts_active_user_test",
+            "user_id",
+            "test_id",
+            unique=True,
+            postgresql_where=text("status = 'in_progress'"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)

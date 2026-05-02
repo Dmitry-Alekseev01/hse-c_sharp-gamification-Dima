@@ -41,6 +41,33 @@ class UserProfileUpdate(BaseModel):
         return self
 
 
+class UserPasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "UserPasswordChange":
+        if not self.current_password:
+            raise ValueError("current_password must not be empty")
+        if not self.new_password:
+            raise ValueError("new_password must not be empty")
+        return self
+
+
+class AdminUserPasswordReset(BaseModel):
+    new_password: str
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "AdminUserPasswordReset":
+        if not self.new_password:
+            raise ValueError("new_password must not be empty")
+        return self
+
+
+class PasswordChangeRead(BaseModel):
+    detail: str
+
+
 class UserRead(BaseModel):
     id: int
     username: str
