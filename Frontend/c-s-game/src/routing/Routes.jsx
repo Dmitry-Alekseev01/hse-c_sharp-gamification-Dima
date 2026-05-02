@@ -58,7 +58,6 @@ const AppRoutes = () => {
 
   return (
     <Routes location={location}>
-      {/* Публичные маршруты (доступны без авторизации) */}
       <Route
         path={LOGIN_ROUTE}
         element={

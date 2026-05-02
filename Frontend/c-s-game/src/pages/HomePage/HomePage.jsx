@@ -1,149 +1,94 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  fetchUserProfile,
-  getToken,
-  fetchUserProgress,
-  fetchTests,
-  fetchMaterials,
-  fetchLevels,
-  fetchUserAnswers,
-} from '../../api/api';
+  useUserProfile,
+  useUserProgress,
+  useTests,
+  useMaterials,
+  useLevels,
+} from '../../hooks/useHomeData';
+import { useQueries } from '@tanstack/react-query';
+import { fetchUserAnswers } from '../../api/api';
 import './HomePage.css';
 
 const Home = () => {
-  const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState('');
-  const [stats, setStats] = useState({
-    totalTests: 0,
-    completedTests: 0,
-    averageScore: 0,
-    totalPoints: 0,
-    streakDays: 0,
-    totalMaterials: 0,
-  });
-  const [levels, setLevels] = useState([]);
-  const [currentLevel, setCurrentLevel] = useState(null);
-  const [deadlines, setDeadlines] = useState([]);
-  const [badges, setBadges] = useState([]);
   const [activeTab, setActiveTab] = useState('roadmap');
   const [activeFilter, setActiveFilter] = useState('all');
 
-  const getAverageScoreIn10Scale = (percent) => {
-    if (percent === undefined || percent === null) return '—';
-    const score = (percent / 10).toFixed(1);
-    return score;
-  };
+  const { data: profile, isLoading: profileLoading } = useUserProfile();
+  const { data: progress, isLoading: progressLoading } = useUserProgress(profile?.id);
+  const { data: tests, isLoading: testsLoading } = useTests();
+  const { data: materials, isLoading: materialsLoading } = useMaterials();
+  const { data: levels, isLoading: levelsLoading } = useLevels();
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-  };
+  const answersQueries = useQueries({
+    queries: (tests || []).map((test) => ({
+      queryKey: ['userAnswers', test.id],
+      queryFn: () => fetchUserAnswers(test.id),
+    })),
+  });
 
-  const formatShortDate = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
-  };
-
-  const getPriorityClass = (daysLeft) => {
-    if (daysLeft <= 3) return 'priority-high';
-    if (daysLeft <= 7) return 'priority-medium';
-    return 'priority-low';
-  };
-
-  const getFilteredDeadlines = () => {
-    if (activeFilter === 'all') return deadlines;
-    return deadlines.filter((item) => item.type === activeFilter);
-  };
-
-  useEffect(() => {
-    const loadHomeData = async () => {
-      if (!getToken()) {
-        setLoading(false);
-        return;
+  const { stats, deadlines, badges, currentLevel } = useMemo(() => {
+    if (!tests || !answersQueries.length)
+      return { stats: {}, deadlines: [], badges: [], currentLevel: null };
+    let completedTests = 0;
+    let totalScoreSum = 0;
+    let testsWithScore = 0;
+    const deadlinesList = [];
+    answersQueries.forEach((res, idx) => {
+      const answers = res.data;
+      const test = tests[idx];
+      if (test.deadline) {
+        const daysLeft = Math.ceil((new Date(test.deadline) - new Date()) / (1000 * 60 * 60 * 24));
+        deadlinesList.push({
+          id: test.id,
+          title: test.title,
+          type: 'test',
+          deadline: test.deadline,
+          daysLeft,
+          priority: daysLeft <= 3 ? 'high' : daysLeft <= 7 ? 'medium' : 'low',
+        });
       }
-      try {
-        const profile = await fetchUserProfile();
-        setUserName(profile.full_name || profile.username);
-
-        const progress = await fetchUserProgress(profile.id);
-        if (progress) {
-          setStats((prev) => ({
-            ...prev,
-            totalPoints: progress.total_points || 0,
-            streakDays: progress.streak_days || 0,
-          }));
-          setBadges(progress.badges || []);
-          if (progress.current_level) setCurrentLevel(progress.current_level);
+      if (answers?.length) {
+        completedTests++;
+        const userScore = answers.reduce((sum, ans) => sum + (ans.score || 0), 0);
+        if (test.max_score) {
+          const percentage = (userScore / test.max_score) * 100;
+          totalScoreSum += percentage;
+          testsWithScore++;
         }
-
-        const levelsData = await fetchLevels();
-        setLevels(levelsData || []);
-
-        const tests = await fetchTests();
-        const totalTestsCount = tests.length;
-        let completedCount = 0;
-        let totalScoreSum = 0;
-        let testsWithScore = 0;
-        const deadlinesList = [];
-
-        for (const test of tests) {
-          if (test.deadline) {
-            const deadlineDate = new Date(test.deadline);
-            const today = new Date();
-            const diffTime = deadlineDate - today;
-            const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            deadlinesList.push({
-              id: test.id,
-              title: test.title,
-              type: 'test',
-              deadline: test.deadline,
-              daysLeft: daysLeft,
-              priority: daysLeft <= 3 ? 'high' : daysLeft <= 7 ? 'medium' : 'low',
-            });
-          }
-
-          try {
-            const answers = await fetchUserAnswers(test.id);
-            if (answers && answers.length > 0) {
-              completedCount++;
-              const userScore = answers.reduce((sum, ans) => sum + (ans.score || 0), 0);
-              const maxScore = test.max_score;
-              if (maxScore) {
-                const percentage = (userScore / maxScore) * 100;
-                totalScoreSum += percentage;
-                testsWithScore++;
-              }
-            }
-          } catch (e) {}
-        }
-
-        const averageScore = testsWithScore > 0 ? Math.round(totalScoreSum / testsWithScore) : 0;
-        setStats((prev) => ({
-          ...prev,
-          totalTests: totalTestsCount,
-          completedTests: completedCount,
-          averageScore: averageScore,
-        }));
-        setDeadlines(deadlinesList);
-
-        const materials = await fetchMaterials();
-        setStats((prev) => ({
-          ...prev,
-          totalMaterials: materials.length,
-        }));
-      } catch (error) {
-        console.error('Ошибка загрузки главной страницы:', error);
-      } finally {
-        setLoading(false);
       }
+    });
+    const averageScore = testsWithScore ? Math.round(totalScoreSum / testsWithScore) : 0;
+    const totalPoints = progress?.total_points || 0;
+    const streakDays = progress?.streak_days || 0;
+    const badgesList = progress?.badges || [];
+    const current = progress?.current_level;
+    return {
+      stats: {
+        totalTests: tests.length,
+        completedTests,
+        averageScore,
+        totalPoints,
+        streakDays,
+        totalMaterials: materials?.length || 0,
+      },
+      deadlines: deadlinesList,
+      badges: badgesList,
+      currentLevel: current,
     };
-    loadHomeData();
-  }, []);
+  }, [tests, answersQueries, progress, materials]);
 
-  if (loading) return <div className="loading">Загрузка...</div>;
+  if (profileLoading || progressLoading || testsLoading || materialsLoading || levelsLoading) {
+    return <div className="loading">Загрузка...</div>;
+  }
+
+  const getAverageScoreIn10Scale = (percent) =>
+    percent !== undefined ? (percent / 10).toFixed(1) : '—';
+  const formatShortDate = (dateString) =>
+    dateString
+      ? new Date(dateString).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+      : '';
 
   const totalDeadlines = deadlines.length;
   const overdueCount = deadlines.filter((d) => d.daysLeft < 0).length;
@@ -156,12 +101,11 @@ const Home = () => {
     <div className="home-page">
       <div className="welcome-section">
         <div className="welcome-content">
-          <h1>Добро пожаловать, {userName || 'Гость'}!</h1>
+          <h1>Добро пожаловать, {profile?.full_name || profile?.username || 'Гость'}!</h1>
           <p className="welcome-subtitle">
             Продолжайте изучать веб-разработку. Сегодня отличный день для обучения!
           </p>
           <div className="stats-cards">
-            {/* Убрана карточка "Текущий стрик" */}
             <div className="stat-card">
               <div className="stat-info">
                 <div className="stat-value">{getAverageScoreIn10Scale(stats.averageScore)}</div>
@@ -189,7 +133,7 @@ const Home = () => {
       <div className="streak-section">
         <h2 className="section-title">Текущий стрик: {stats.streakDays} дней</h2>
         <div className="streak-calendar">
-          <div className="streak-placeholder">Продолжайте учиться каждый день!</div>
+          <div className="streak-placeholder">Продолжайте учиться каждый день! 🔥</div>
         </div>
         <p className="streak-motivation">
           {stats.streakDays >= 7
@@ -223,11 +167,9 @@ const Home = () => {
         {activeTab === 'roadmap' && (
           <div className="roadmap-section">
             <h2 className="section-title">Дорожная карта обучения</h2>
-            {levels.length === 0 ? (
-              <p>Нет данных о уровнях</p>
-            ) : (
+            {levels?.length ? (
               <div className="roadmap-timeline">
-                {levels.map((level, index) => {
+                {levels.map((level, idx) => {
                   const isCompleted =
                     currentLevel && level.required_points <= currentLevel.required_points;
                   const isCurrent = currentLevel && level.id === currentLevel.id;
@@ -237,7 +179,7 @@ const Home = () => {
                       className={`roadmap-item ${isCompleted ? 'completed' : isCurrent ? 'in_progress' : 'pending'}`}
                     >
                       <div className="roadmap-marker">
-                        {index < levels.length - 1 && <div className="timeline-line"></div>}
+                        {idx < levels.length - 1 && <div className="timeline-line"></div>}
                       </div>
                       <div className="roadmap-content">
                         <div className="roadmap-header">
@@ -262,6 +204,8 @@ const Home = () => {
                   );
                 })}
               </div>
+            ) : (
+              <p>Нет данных о уровнях</p>
             )}
           </div>
         )}
@@ -306,24 +250,28 @@ const Home = () => {
               </button>
             </div>
             <div className="deadlines-horizontal">
-              {getFilteredDeadlines().map((item) => (
-                <div
-                  key={item.id}
-                  className={`deadline-item-horizontal ${getPriorityClass(item.daysLeft)}`}
-                >
-                  <div className="deadline-info-horizontal">
-                    <div className="deadline-title-horizontal">{item.title}</div>
-                    <div className="deadline-meta-horizontal">
-                      <span className="deadline-date">{formatShortDate(item.deadline)}</span>
-                      <span className={`deadline-days-left ${item.daysLeft <= 3 ? 'urgent' : ''}`}>
-                        {item.daysLeft}{' '}
-                        {item.daysLeft === 1 ? 'день' : item.daysLeft <= 4 ? 'дня' : 'дней'}
-                      </span>
+              {deadlines
+                .filter((d) => activeFilter === 'all' || d.type === activeFilter)
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className={`deadline-item-horizontal priority-${item.priority}`}
+                  >
+                    <div className="deadline-info-horizontal">
+                      <div className="deadline-title-horizontal">{item.title}</div>
+                      <div className="deadline-meta-horizontal">
+                        <span className="deadline-date">{formatShortDate(item.deadline)}</span>
+                        <span
+                          className={`deadline-days-left ${item.daysLeft <= 3 ? 'urgent' : ''}`}
+                        >
+                          {item.daysLeft}{' '}
+                          {item.daysLeft === 1 ? 'день' : item.daysLeft <= 4 ? 'дня' : 'дней'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              {getFilteredDeadlines().length === 0 && <p>Нет заданий с дедлайнами</p>}
+                ))}
+              {!deadlines.length && <p>Нет заданий с дедлайнами</p>}
             </div>
           </div>
         )}
