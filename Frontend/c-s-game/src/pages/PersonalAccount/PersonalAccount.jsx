@@ -1,109 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import {
-  fetchUserProfile,
-  getToken,
-  fetchTests,
-  fetchUserAnswers,
-  fetchMaterials,
-} from '../../api/api';
+import { useProfileStats } from '../../hooks/useProfile';
 import './PersonalAccount.css';
 
 const PersonalAccount = () => {
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [stats, setStats] = useState({
-    totalMaterials: 0,
-    totalTests: 0,
-    completedTests: 0,
-    averageScore: 0,
-    overallProgress: 0,
-  });
+  const { profile, stats, isLoading, error } = useProfileStats();
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (!getToken()) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const profileData = await fetchUserProfile();
-        console.log('Профиль пользователя:', profileData);
-        setProfile(profileData);
-
-        const materials = await fetchMaterials();
-        const totalMaterials = materials.length;
-
-        const tests = await fetchTests();
-        const totalTests = tests.length;
-        let completedTests = 0;
-        let totalScoreSum = 0;
-        let testsWithScore = 0;
-
-        for (const test of tests) {
-          try {
-            const answers = await fetchUserAnswers(test.id);
-            if (answers && answers.length > 0) {
-              completedTests++;
-              const userScore = answers.reduce((sum, ans) => sum + (ans.score || 0), 0);
-              const maxScore = test.max_score;
-              if (maxScore) {
-                const percentage = (userScore / maxScore) * 100;
-                totalScoreSum += percentage;
-                testsWithScore++;
-              }
-            }
-          } catch (e) {
-          }
-        }
-        const averageScore = testsWithScore > 0 ? Math.round(totalScoreSum / testsWithScore) : 0;
-        const overallProgress = totalTests ? Math.round((completedTests / totalTests) * 100) : 0;
-
-        setStats({
-          totalMaterials,
-          totalTests,
-          completedTests,
-          averageScore,
-          overallProgress,
-        });
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
-
-  const getRegistrationDate = (profile) => {
-    if (!profile) return null;
-    const dateString = profile.created_at || profile.registered_at || profile.date_joined || null;
-    if (!dateString) return null;
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return null;
-    return date.toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-  };
-
-  if (loading) return <div className="loading">Загрузка профиля...</div>;
-  if (error) return <div className="error">Ошибка: {error}</div>;
+  if (isLoading) return <div className="loading">Загрузка профиля...</div>;
+  if (error) return <div className="error">Ошибка: {error.message}</div>;
   if (!profile) return <div className="error">Пожалуйста, войдите в систему</div>;
 
+  const getRegistrationDate = (profile) => {
+    const dateString = profile.created_at || profile.registered_at || profile.date_joined;
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    return isNaN(date)
+      ? null
+      : date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
   let displayName = profile.full_name;
-  if (!displayName) {
+  if (!displayName)
     displayName =
       profile.username && profile.username.includes('@') ? 'Пользователь' : profile.username;
-  }
-  const loginName = profile.username;
   const registrationDate = getRegistrationDate(profile);
 
-  const materialsDisplay = `0/${stats.totalMaterials}`;
-  const testsDisplay = `${stats.completedTests}/${stats.totalTests}`;
-  const progressDisplay = `${stats.overallProgress}%`;
+  const materialsDisplay = `0/${stats.totalMaterials || 0}`;
+  const testsDisplay = `${stats.completedTests || 0}/${stats.totalTests || 0}`;
+  const progressDisplay = `${stats.overallProgress || 0}%`;
 
   return (
     <div className="personal-account-page">
@@ -129,7 +53,7 @@ const PersonalAccount = () => {
               <div className="detail-item">
                 <div className="detail-label">Логин:</div>
                 <div className="detail-value">
-                  <span className="login-value">@{loginName}</span>
+                  <span className="login-value">@{profile.username}</span>
                 </div>
               </div>
               <div className="detail-item">

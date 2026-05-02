@@ -48,8 +48,7 @@ export const loginUser = async (username, password) => {
   localStorage.setItem('userEmail', username);
   try {
     await fetchUserProfile();
-  } catch (_) {
-  }
+  } catch (_) {}
   return data;
 };
 
@@ -156,5 +155,15 @@ export const updateUserProfile = async (fullName) => {
   return authFetch('/users/me', {
     method: 'PATCH',
     body: JSON.stringify({ full_name: fullName }),
+  });
+};
+
+export const changePassword = async (currentPassword, newPassword) => {
+  return authFetch('/users/me/password', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
   });
 };
