@@ -17,6 +17,7 @@ class TestAttempt(Base):
             "test_id",
             unique=True,
             postgresql_where=text("status = 'in_progress'"),
+            sqlite_where=text("status = 'in_progress'"),
         ),
     )
 
