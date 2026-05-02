@@ -90,7 +90,7 @@ async def test_admin_auth_provider_login_allows_admin_only(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_admin_auth_provider_login_rejects_non_admin(monkeypatch):
+async def test_admin_auth_provider_login_allows_teacher(monkeypatch):
     provider = AdminOnlyAuthProvider()
     request = _DummyRequest()
     response = Response()
@@ -104,8 +104,31 @@ async def test_admin_auth_provider_login_rejects_non_admin(monkeypatch):
     monkeypatch.setattr("app.admin.auth_provider.auth_repo.authenticate_user", fake_authenticate_user)
     monkeypatch.setattr("app.admin.auth_provider.get_redis_client", lambda: fake_redis)
 
+    result = await provider.login("teacher@example.com", "secret", remember_me=False, request=request, response=response)
+
+    assert result is response
+    assert request.session["admin_user_id"] == 5
+    assert request.session["admin_username"] == "teacher@example.com"
+    assert request.session["admin_role"] == "teacher"
+
+
+@pytest.mark.asyncio
+async def test_admin_auth_provider_login_rejects_non_operator(monkeypatch):
+    provider = AdminOnlyAuthProvider()
+    request = _DummyRequest()
+    response = Response()
+
+    async def fake_authenticate_user(db, username: str, password: str):
+        del db, username, password
+        return SimpleNamespace(id=5, username="student@example.com", role="user")
+
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
+    monkeypatch.setattr("app.admin.auth_provider.auth_repo.authenticate_user", fake_authenticate_user)
+    monkeypatch.setattr("app.admin.auth_provider.get_redis_client", lambda: fake_redis)
+
     with pytest.raises(LoginFailed):
-        await provider.login("teacher@example.com", "secret", remember_me=False, request=request, response=response)
+        await provider.login("student@example.com", "secret", remember_me=False, request=request, response=response)
 
 
 @pytest.mark.asyncio
@@ -136,11 +159,11 @@ async def test_admin_auth_provider_is_authenticated_sets_admin_user(monkeypatch)
 async def test_admin_auth_provider_is_authenticated_clears_invalid_session(monkeypatch):
     provider = AdminOnlyAuthProvider()
     request = _DummyRequest()
-    request.session.update({"admin_user_id": 11, "admin_username": "teacher@example.com", "admin_role": "teacher"})
+    request.session.update({"admin_user_id": 11, "admin_username": "student@example.com", "admin_role": "user"})
 
     async def fake_get_user_by_id(db, user_id: int):
         del db, user_id
-        return SimpleNamespace(id=11, username="teacher@example.com", role="teacher")
+        return SimpleNamespace(id=11, username="student@example.com", role="user")
 
     monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
     monkeypatch.setattr("app.admin.auth_provider.user_repo.get_user_by_id", fake_get_user_by_id)
@@ -149,6 +172,27 @@ async def test_admin_auth_provider_is_authenticated_clears_invalid_session(monke
 
     assert is_auth is False
     assert request.session == {}
+
+
+@pytest.mark.asyncio
+async def test_admin_auth_provider_is_authenticated_allows_teacher(monkeypatch):
+    provider = AdminOnlyAuthProvider()
+    request = _DummyRequest()
+    request.session.update({"admin_user_id": 12, "admin_username": "teacher@example.com", "admin_role": "teacher"})
+
+    async def fake_get_user_by_id(db, user_id: int):
+        del db
+        if user_id == 12:
+            return SimpleNamespace(id=12, username="teacher@example.com", role="teacher")
+        return None
+
+    monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
+    monkeypatch.setattr("app.admin.auth_provider.user_repo.get_user_by_id", fake_get_user_by_id)
+
+    is_auth = await provider.is_authenticated(request)
+
+    assert is_auth is True
+    assert getattr(request.state, "admin_user").username == "teacher@example.com"
 
 
 @pytest.mark.asyncio

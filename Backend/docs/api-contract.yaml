@@ -179,9 +179,9 @@ components:
         max_attempts: { type: integer, minimum: 1 }
         published: { type: boolean }
         published_at: { type: string, format: date-time, nullable: true }
-        material_id: { type: integer, nullable: true }
         material_ids:
           type: array
+          description: Many-to-many links to related materials.
           items: { type: integer }
         deadline: { type: string, format: date-time, nullable: true }
         author_id: { type: integer, nullable: true }
@@ -197,9 +197,9 @@ components:
         max_score: { type: integer, nullable: true }
         max_attempts: { type: integer, minimum: 1, default: 1 }
         published: { type: boolean }
-        material_id: { type: integer, nullable: true }
         material_ids:
           type: array
+          description: Many-to-many links to related materials.
           items: { type: integer }
         deadline: { type: string, format: date-time, nullable: true }
         required_level_id: { type: integer, nullable: true }
@@ -235,6 +235,54 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/GamificationBadgeRead'
+
+    LearningTestResultRead:
+      type: object
+      properties:
+        test_id: { type: integer }
+        title: { type: string }
+        deadline: { type: string, format: date-time, nullable: true }
+        user_status:
+          type: string
+          enum: [not_started, in_progress, completed]
+        has_active_attempt: { type: boolean }
+        completed_attempts: { type: integer }
+        remaining_attempts: { type: integer }
+        score_percent: { type: number, format: float, nullable: true }
+        score_value: { type: number, format: float, nullable: true }
+        max_score: { type: number, format: float, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+
+    LearningDashboardRead:
+      type: object
+      properties:
+        user_id: { type: integer }
+        username: { type: string }
+        total_points: { type: number, format: float }
+        streak_days: { type: integer }
+        total_materials: { type: integer }
+        total_tests: { type: integer }
+        completed_tests: { type: integer }
+        tests_with_score: { type: integer }
+        average_score_percent: { type: number, format: float }
+        current_level:
+          allOf:
+            - $ref: '#/components/schemas/LevelRead'
+          nullable: true
+        next_level:
+          allOf:
+            - $ref: '#/components/schemas/LevelRead'
+          nullable: true
+        points_to_next_level: { type: number, format: float }
+        progress_percent: { type: number, format: float }
+        badges:
+          type: array
+          items:
+            $ref: '#/components/schemas/GamificationBadgeRead'
+        test_results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningTestResultRead'
 
     UserAchievementRead:
       type: object
@@ -1301,6 +1349,20 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UserGamificationProgressRead' }
+
+  /api/v1/analytics/me/learning-dashboard:
+    get:
+      summary: Aggregated learning dashboard for current user (home/personal/analytics screens)
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearningDashboardRead' }
 
   /api/v1/analytics/me/achievements:
     get:

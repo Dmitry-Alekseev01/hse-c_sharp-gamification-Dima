@@ -44,6 +44,17 @@ async def get_group(session, group_id: int) -> StudyGroup | None:
     return res.scalars().first()
 
 
+async def update_group(session, group_id: int, *, name: str | None = None) -> StudyGroup | None:
+    group = await session.get(StudyGroup, group_id)
+    if group is None:
+        return None
+    if name is not None:
+        group.name = name
+    await session.flush()
+    await session.refresh(group)
+    return group
+
+
 async def delete_group(session, group_id: int) -> bool:
     group = await session.get(StudyGroup, group_id)
     if group is None:

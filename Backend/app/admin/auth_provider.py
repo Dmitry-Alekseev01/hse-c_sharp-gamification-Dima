@@ -19,6 +19,7 @@ class _AdminSecurityBackendUnavailable(Exception):
 class AdminOnlyAuthProvider(AuthProvider):
     session_user_id_key = "admin_user_id"
     session_username_key = "admin_username"
+    allowed_roles = {"admin", "teacher"}
 
     async def login(
         self,
@@ -45,7 +46,8 @@ class AdminOnlyAuthProvider(AuthProvider):
             async with AsyncSessionLocal() as db:
                 user = await auth_repo.authenticate_user(db, username, password)
 
-            if user is None or str(user.role).lower() != "admin":
+            role = str(getattr(user, "role", "")).lower() if user is not None else ""
+            if user is None or role not in self.allowed_roles:
                 await self._register_failed_attempt(identifier, username_key, security_client)
                 raise LoginFailed("Invalid username or password")
 
@@ -88,7 +90,7 @@ class AdminOnlyAuthProvider(AuthProvider):
         async with AsyncSessionLocal() as db:
             user = await user_repo.get_user_by_id(db, user_id)
 
-        if user is None or str(user.role).lower() != "admin":
+        if user is None or str(user.role).lower() not in self.allowed_roles:
             request.session.clear()
             return False
 

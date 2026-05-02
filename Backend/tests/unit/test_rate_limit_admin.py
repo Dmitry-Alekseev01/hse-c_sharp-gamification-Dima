@@ -28,6 +28,12 @@ def test_scope_for_password_change_endpoint():
     assert limit == settings.rate_limit_password
 
 
+def test_scope_for_admin_user_password_reset_endpoint():
+    scope, limit = RateLimitMiddleware._get_scope_and_limit("/api/v1/users/42/password", "PATCH")
+    assert scope == "password"
+    assert limit == settings.rate_limit_password
+
+
 def test_identifier_prefers_x_real_ip_over_forwarded_for():
     request = _DummyRequest(
         headers={

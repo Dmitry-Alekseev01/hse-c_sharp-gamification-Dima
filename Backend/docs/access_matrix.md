@@ -1,6 +1,6 @@
 # Backend Access Matrix
 
-This document describes the role policy introduced in Batch 1 for user-scoped analytics access.
+This document describes the role policy for user-scoped analytics access.
 
 ## Roles
 
@@ -35,3 +35,45 @@ The policy is centralized in:
   - `ensure_teacher_or_admin_can_access_user(...)`
 
 Routers now call the centralized helper instead of duplicating role checks.
+
+## Admin Panel Role Matrix
+
+`AdminOnlyAuthProvider` allows admin-panel login for roles:
+
+- `admin`
+- `teacher`
+
+### Views Available To `teacher`
+
+- `Materials` (CRUD, only own records by `author_id`)
+- `Material Blocks` (CRUD, only for own materials)
+- `Material Attachments` (CRUD, only for own materials)
+- `Tests` (CRUD, only own records by `author_id`)
+- `Questions` (CRUD, only for own tests)
+- `Choices` (CRUD, only for own tests)
+- `Study Groups` (CRUD, only own records by `teacher_id`)
+- `Group Memberships` (CRUD, only for own groups)
+
+### Views Restricted To `admin` Only
+
+- `Users` (read-only)
+- `Levels`
+- `Analytics`
+- `Test Attempts`
+- `Answers`
+- `Points Ledger`
+- `User Achievements`
+- `User Rewards`
+- `Reward Definitions`
+- `Unlock Rules`
+- `Challenges`
+- `Challenge Progress`
+- `Challenge Claims`
+- `AI Jobs`
+- `Seasons`
+- `Leaderboard Snapshots`
+
+### Additional Guardrails
+
+- Teacher cannot assign foreign ownership during create/edit in owner-scoped views.
+- Teacher cannot link foreign materials to tests in admin form validation.

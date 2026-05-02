@@ -4,6 +4,8 @@ from typing import List
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.material_taxonomy import AttachmentKind, MaterialBlockType
+
 
 class MaterialType(str, Enum):
     LESSON = "lesson"
@@ -17,26 +19,20 @@ class MaterialStatus(str, Enum):
     ARCHIVED = "archived"
 
 
-class MaterialBlockType(str, Enum):
-    TEXT = "text"
-    DOCUMENTATION_LINK = "documentation_link"
-    VIDEO_LINK = "video_link"
-    CODE_EXAMPLE = "code_example"
-
-
-class AttachmentKind(str, Enum):
-    PDF = "pdf"
-    DOCX = "docx"
-    PPTX = "pptx"
-    OTHER = "other"
-
-
 class MaterialBlockCreate(BaseModel):
     block_type: MaterialBlockType
     title: str | None = None
     body: str | None = None
     url: str | None = None
     order_index: int = 0
+
+
+class MaterialBlockUpdate(BaseModel):
+    block_type: MaterialBlockType | None = None
+    title: str | None = None
+    body: str | None = None
+    url: str | None = None
+    order_index: int | None = None
 
 
 class MaterialBlockRead(BaseModel):
@@ -56,6 +52,14 @@ class MaterialAttachmentCreate(BaseModel):
     file_kind: AttachmentKind = AttachmentKind.OTHER
     order_index: int = 0
     is_downloadable: bool = True
+
+
+class MaterialAttachmentUpdate(BaseModel):
+    title: str | None = None
+    file_url: str | None = None
+    file_kind: AttachmentKind | None = None
+    order_index: int | None = None
+    is_downloadable: bool | None = None
 
 
 class MaterialAttachmentRead(BaseModel):

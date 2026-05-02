@@ -15,7 +15,6 @@ class Test(Base):
     max_attempts = Column(Integer, nullable=False, default=1, server_default="1")
     published = Column(Boolean, default=False, nullable=False)
     published_at = Column(DateTime, server_default=func.now(), nullable=True)
-    material_id = Column(Integer, ForeignKey("materials.id"), nullable=True, index=True)
     deadline = Column(DateTime, nullable=True)
     author_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     required_level_id = Column(Integer, ForeignKey("levels.id"), nullable=True, index=True)

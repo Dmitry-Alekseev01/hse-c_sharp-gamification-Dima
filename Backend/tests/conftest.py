@@ -61,6 +61,7 @@ async def db(session: AsyncSession):
 @pytest.fixture()
 async def client(session: AsyncSession, monkeypatch: pytest.MonkeyPatch):
     from app.api.v1.routers import analytics as analytics_router
+    from app.api.v1.routers import answers as answers_router
     from app.api.v1.routers import choices as choices_router
     from app.api.v1.routers import materials as materials_router
     from app.api.v1.routers import questions as questions_router
@@ -96,6 +97,10 @@ async def client(session: AsyncSession, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(tests_router, "set", fake_set, raising=False)
     monkeypatch.setattr(tests_router, "get_cache_namespace_version", fake_get_namespace_version, raising=False)
     monkeypatch.setattr(tests_router, "bump_cache_namespace", fake_bump_namespace, raising=False)
+
+    monkeypatch.setattr(answers_router, "get", fake_get, raising=False)
+    monkeypatch.setattr(answers_router, "set", fake_set, raising=False)
+    monkeypatch.setattr(answers_router, "get_cache_namespace_version", fake_get_namespace_version, raising=False)
 
     monkeypatch.setattr(questions_router, "get", fake_get, raising=False)
     monkeypatch.setattr(questions_router, "set", fake_set, raising=False)

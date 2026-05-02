@@ -47,20 +47,32 @@ async def get_manageable_material(db: AsyncSession, material_id: int, current_us
     return material
 
 
-async def get_visible_test(db: AsyncSession, test_id: int, current_user: User) -> Test:
+async def get_visible_test(
+    db: AsyncSession,
+    test_id: int,
+    current_user: User,
+    *,
+    total_points: float | None = None,
+) -> Test:
     test = await get_test_or_404(db, test_id)
     if can_manage_test(current_user, test):
         return test
-    if test.published and await is_unlocked_test(db, current_user, test):
+    if test.published and await is_unlocked_test(db, current_user, test, total_points=total_points):
         return test
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
 
 
-async def get_visible_material(db: AsyncSession, material_id: int, current_user: User) -> Material:
+async def get_visible_material(
+    db: AsyncSession,
+    material_id: int,
+    current_user: User,
+    *,
+    total_points: float | None = None,
+) -> Material:
     material = await get_material_or_404(db, material_id)
     if can_manage_material(current_user, material):
         return material
-    if await is_unlocked_material(db, current_user, material):
+    if await is_unlocked_material(db, current_user, material, total_points=total_points):
         return material
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
 
@@ -110,19 +122,33 @@ async def ensure_teacher_or_admin_can_access_user(
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
 
-async def is_unlocked_test(db: AsyncSession, current_user: User, test: Test) -> bool:
+async def is_unlocked_test(
+    db: AsyncSession,
+    current_user: User,
+    test: Test,
+    *,
+    total_points: float | None = None,
+) -> bool:
     if current_user.role in {"teacher", "admin"}:
         return True
     if test.required_level is None:
         return True
-    total_points, _ = await get_user_level_context(db, current_user)
+    if total_points is None:
+        total_points, _ = await get_user_level_context(db, current_user)
     return float(test.required_level.required_points or 0.0) <= total_points
 
 
-async def is_unlocked_material(db: AsyncSession, current_user: User, material: Material) -> bool:
+async def is_unlocked_material(
+    db: AsyncSession,
+    current_user: User,
+    material: Material,
+    *,
+    total_points: float | None = None,
+) -> bool:
     if current_user.role in {"teacher", "admin"}:
         return True
     if material.required_level is None:
         return True
-    total_points, _ = await get_user_level_context(db, current_user)
+    if total_points is None:
+        total_points, _ = await get_user_level_context(db, current_user)
     return float(material.required_level.required_points or 0.0) <= total_points

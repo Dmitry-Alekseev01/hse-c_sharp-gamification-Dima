@@ -47,6 +47,16 @@ async def create_challenge(
     return challenge
 
 
+async def list_challenges(
+    session: AsyncSession,
+    *,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[Challenge]:
+    stmt = select(Challenge).order_by(Challenge.id.desc()).offset(offset).limit(limit)
+    return list((await session.execute(stmt)).scalars().all())
+
+
 async def get_challenge(session: AsyncSession, challenge_id: int) -> Challenge | None:
     return await session.get(Challenge, challenge_id)
 
@@ -54,6 +64,51 @@ async def get_challenge(session: AsyncSession, challenge_id: int) -> Challenge |
 async def get_challenge_by_code(session: AsyncSession, code: str) -> Challenge | None:
     stmt = select(Challenge).where(Challenge.code == code).limit(1)
     return (await session.execute(stmt)).scalars().first()
+
+
+async def update_challenge(
+    session: AsyncSession,
+    challenge_id: int,
+    **changes,
+) -> Challenge | None:
+    challenge = await get_challenge(session, challenge_id)
+    if challenge is None:
+        return None
+
+    if "code" in changes:
+        challenge.code = changes["code"]
+    if "title" in changes:
+        challenge.title = changes["title"]
+    if "description" in changes:
+        challenge.description = changes["description"]
+    if "period_type" in changes:
+        challenge.period_type = changes["period_type"]
+    if "event_type" in changes:
+        challenge.event_type = changes["event_type"]
+    if "target_value" in changes:
+        challenge.target_value = changes["target_value"]
+    if "reward_points" in changes:
+        challenge.reward_points = changes["reward_points"]
+    if "is_active" in changes:
+        challenge.is_active = changes["is_active"]
+    if "starts_at" in changes:
+        challenge.starts_at = changes["starts_at"]
+    if "ends_at" in changes:
+        challenge.ends_at = changes["ends_at"]
+
+    challenge.updated_at = now_utc_naive()
+    await session.flush()
+    await session.refresh(challenge)
+    return challenge
+
+
+async def delete_challenge(session: AsyncSession, challenge_id: int) -> bool:
+    challenge = await get_challenge(session, challenge_id)
+    if challenge is None:
+        return False
+    await session.delete(challenge)
+    await session.flush()
+    return True
 
 
 async def list_active_challenges(

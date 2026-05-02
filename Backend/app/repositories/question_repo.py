@@ -1,7 +1,9 @@
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
-from app.models.question import Question
+
 from app.models.choice import Choice
+from app.models.question import Question
+
 
 async def create_question_with_choices(
     session,
@@ -16,32 +18,55 @@ async def create_question_with_choices(
     Creates a Question and its Choices (if provided).
     choices: list of dicts {value, ordinal, is_correct}
     """
-    q = Question(
+    question = Question(
         test_id=test_id,
         text=text,
         points=points,
         is_open_answer=is_open_answer,
         material_urls=material_urls,
     )
-    session.add(q)
-    await session.flush()  # get q.id
+    session.add(question)
+    await session.flush()  # get question.id
+
     if choices:
-        for c in choices:
-            ch = Choice(question_id=q.id, value=c["value"], ordinal=c.get("ordinal"), is_correct=c.get("is_correct", False))
-            session.add(ch)
-    await session.flush()   # вместо commit
-    await session.refresh(q)
-    return q
+        for choice in choices:
+            session.add(
+                Choice(
+                    question_id=question.id,
+                    value=choice["value"],
+                    ordinal=choice.get("ordinal"),
+                    is_correct=choice.get("is_correct", False),
+                )
+            )
+
+    # Keep transaction control at service/router level; repository only flushes.
+    await session.flush()
+    await session.refresh(question)
+    return question
+
 
 async def get_question_with_choices(session, question_id: int):
-    q = select(Question).options(selectinload(Question.choices)).where(Question.id == question_id)
-    res = await session.execute(q)
-    return res.scalars().first()
+    stmt = select(Question).options(selectinload(Question.choices)).where(Question.id == question_id)
+    result = await session.execute(stmt)
+    return result.scalars().first()
+
 
 async def list_questions_for_test(session, test_id: int, limit: int = 100, offset: int = 0):
-    q = select(Question).options(selectinload(Question.choices)).where(Question.test_id == test_id).limit(limit).offset(offset)
-    res = await session.execute(q)
-    return res.scalars().all()
+    stmt = (
+        select(Question)
+        .options(selectinload(Question.choices))
+        .where(Question.test_id == test_id)
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await session.execute(stmt)
+    return result.scalars().all()
+
+
+async def delete_questions_for_test(session, test_id: int):
+    await session.execute(delete(Question).where(Question.test_id == test_id))
+    await session.flush()
+
 
 async def update_question(
     session,
@@ -68,6 +93,7 @@ async def update_question(
     await session.flush()
     await session.refresh(question)
     return question
+
 
 async def delete_question(session, question_id: int):
     await session.execute(delete(Question).where(Question.id == question_id))

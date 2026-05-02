@@ -29,6 +29,14 @@ def utcnow_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _to_naive_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
 def resolve_period_key(period_type: str, moment: datetime) -> str:
     if period_type == ChallengePeriodType.DAILY.value:
         return moment.date().isoformat()
@@ -63,11 +71,14 @@ async def create_challenge(
     ends_at: datetime | None,
     created_by: int | None,
 ):
+    normalized_starts_at = _to_naive_utc(starts_at)
+    normalized_ends_at = _to_naive_utc(ends_at)
+
     if target_value < 1:
         raise ValueError("target_value must be >= 1")
     if reward_points < 0:
         raise ValueError("reward_points must be >= 0")
-    if starts_at is not None and ends_at is not None and ends_at < starts_at:
+    if normalized_starts_at is not None and normalized_ends_at is not None and normalized_ends_at < normalized_starts_at:
         raise ValueError("ends_at must be greater than or equal to starts_at")
     existing = await challenge_repo.get_challenge_by_code(session, code)
     if existing is not None:
@@ -83,12 +94,72 @@ async def create_challenge(
         target_value=target_value,
         reward_points=reward_points,
         is_active=is_active,
-        starts_at=starts_at,
-        ends_at=ends_at,
+        starts_at=normalized_starts_at,
+        ends_at=normalized_ends_at,
         created_by=created_by,
     )
     await session.refresh(challenge)
     return challenge
+
+
+async def update_challenge(
+    session: AsyncSession,
+    *,
+    challenge_id: int,
+    code: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    period_type: ChallengePeriodType | None = None,
+    event_type: ChallengeEventType | None = None,
+    target_value: int | None = None,
+    reward_points: float | None = None,
+    is_active: bool | None = None,
+    starts_at: datetime | None = None,
+    ends_at: datetime | None = None,
+):
+    challenge = await challenge_repo.get_challenge(session, challenge_id)
+    if challenge is None:
+        return None
+
+    next_code = code if code is not None else challenge.code
+    next_title = title if title is not None else challenge.title
+    next_description = description if description is not None else challenge.description
+    next_period_type = period_type.value if period_type is not None else challenge.period_type
+    next_event_type = event_type.value if event_type is not None else challenge.event_type
+    next_target_value = int(target_value) if target_value is not None else int(challenge.target_value)
+    next_reward_points = float(reward_points) if reward_points is not None else float(challenge.reward_points or 0.0)
+    next_is_active = bool(is_active) if is_active is not None else bool(challenge.is_active)
+    next_starts_at = _to_naive_utc(starts_at) if starts_at is not None else _to_naive_utc(challenge.starts_at)
+    next_ends_at = _to_naive_utc(ends_at) if ends_at is not None else _to_naive_utc(challenge.ends_at)
+
+    if next_target_value < 1:
+        raise ValueError("target_value must be >= 1")
+    if next_reward_points < 0:
+        raise ValueError("reward_points must be >= 0")
+    if next_starts_at is not None and next_ends_at is not None and next_ends_at < next_starts_at:
+        raise ValueError("ends_at must be greater than or equal to starts_at")
+    if next_code != challenge.code:
+        existing = await challenge_repo.get_challenge_by_code(session, next_code)
+        if existing is not None and existing.id != challenge.id:
+            raise ValueError("Challenge code already exists")
+
+    updated = await challenge_repo.update_challenge(
+        session,
+        challenge_id,
+        code=next_code,
+        title=next_title,
+        description=next_description,
+        period_type=next_period_type,
+        event_type=next_event_type,
+        target_value=next_target_value,
+        reward_points=next_reward_points,
+        is_active=next_is_active,
+        starts_at=next_starts_at,
+        ends_at=next_ends_at,
+    )
+    if updated is not None:
+        await session.refresh(updated)
+    return updated
 
 
 async def record_event(

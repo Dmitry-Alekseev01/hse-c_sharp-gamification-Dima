@@ -5,7 +5,7 @@ from app.api.deps import get_db
 from app.core.security import require_roles
 from app.models.user import User
 from app.repositories import group_repo
-from app.schemas.group import GroupCreate, GroupRead, GroupDetailRead
+from app.schemas.group import GroupCreate, GroupRead, GroupDetailRead, GroupUpdate
 
 
 router = APIRouter()
@@ -67,6 +67,25 @@ async def get_group(
 ):
     group = await _get_managed_group(db, group_id, current_user)
     return _serialize_group(group)
+
+
+@router.patch("/{group_id}", response_model=GroupRead, status_code=status.HTTP_200_OK)
+async def update_group(
+    group_id: int,
+    payload: GroupUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("teacher", "admin")),
+):
+    await _get_managed_group(db, group_id, current_user)
+    if payload.name is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one field must be provided")
+    try:
+        group = await group_repo.update_group(db, group_id, name=payload.name)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    return group
 
 
 @router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)

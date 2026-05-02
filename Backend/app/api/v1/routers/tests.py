@@ -11,6 +11,7 @@ from app.api.v1.access import (
 from app.api.deps import get_db
 from app.cache.redis_cache import (
     NS_MATERIALS,
+    NS_QUESTIONS,
     NS_TESTS,
     NS_TEST_CONTENT,
     NS_TEST_SUMMARY,
@@ -31,10 +32,10 @@ from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.schemas.grading import AttemptScoreUpdate
 from app.schemas.question import QuestionRead
-from app.schemas.test_ import TestCreate, TestRead, TestUpdate
+from app.schemas.test_ import TestCardRead, TestCreate, TestRead, TestUpdate
 from app.schemas.analytics import TestSummary
 from app.schemas.test_attempt import TestAttemptQuotaRead, TestAttemptRead, TestAttemptStateRead
-from app.schemas.test_content import TestContentRead
+from app.schemas.test_content import TestContentRead, TestContentWrite
 from app.repositories import analytics_repo, test_repo, test_attempt_repo
 from app.repositories import question_repo
 from app.services import test_service
@@ -89,7 +90,7 @@ async def list_tests(
     if not published_only and current_user.role not in {"teacher", "admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
-    _, level_id = await get_user_level_context(db, current_user)
+    total_points, level_id = await get_user_level_context(db, current_user)
     if published_only:
         version = await get_cache_namespace_version(NS_TESTS)
         cache_key = cache_key_test_list(
@@ -105,11 +106,69 @@ async def list_tests(
     author_id = current_user.id if (not published_only and current_user.role == "teacher") else None
     items = await test_repo.list_tests(db, published_only=published_only, limit=limit, author_id=author_id)
     if published_only and current_user.role not in {"teacher", "admin"}:
-        items = [item for item in items if await is_unlocked_test(db, current_user, item)]
+        items = [
+            item
+            for item in items
+            if await is_unlocked_test(db, current_user, item, total_points=total_points)
+        ]
     if published_only:
         payload = [TestRead.model_validate(item).model_dump(mode="json") for item in items]
         await set(cache_key, payload, ttl=TESTS_LIST_TTL)
     return items
+
+
+@router.get("/catalog/me", response_model=List[TestCardRead], status_code=status.HTTP_200_OK)
+async def list_tests_with_my_state(
+    published_only: bool = True,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not published_only and current_user.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    total_points: float | None = None
+    if published_only and current_user.role not in {"teacher", "admin"}:
+        total_points, _ = await get_user_level_context(db, current_user)
+
+    author_id = current_user.id if (not published_only and current_user.role == "teacher") else None
+    items = await test_repo.list_tests(db, published_only=published_only, limit=limit, author_id=author_id)
+
+    if published_only and current_user.role not in {"teacher", "admin"}:
+        items = [
+            item
+            for item in items
+            if await is_unlocked_test(db, current_user, item, total_points=total_points)
+        ]
+
+    state_map = await test_repo.get_user_test_state_map(
+        db,
+        user_id=current_user.id,
+        tests=items,
+    )
+
+    payload: list[TestCardRead] = []
+    for item in items:
+        base = TestRead.model_validate(item).model_dump(mode="python")
+        state = state_map.get(item.id, {})
+        payload.append(
+            TestCardRead.model_validate(
+                {
+                    **base,
+                    "total_questions": int(state.get("total_questions", 0)),
+                    "user_status": state.get("user_status", "not_started"),
+                    "has_active_attempt": bool(state.get("has_active_attempt", False)),
+                    "active_attempt_id": state.get("active_attempt_id"),
+                    "completed_attempts": int(state.get("completed_attempts", 0)),
+                    "remaining_attempts": int(state.get("remaining_attempts", max(int(item.max_attempts or 1), 1))),
+                    "user_score": state.get("user_score"),
+                    "user_max_score": state.get("user_max_score"),
+                    "latest_completed_at": state.get("latest_completed_at"),
+                }
+            )
+        )
+
+    return payload
 
 
 @router.get("/{test_id}", response_model=TestRead, status_code=status.HTTP_200_OK)
@@ -118,16 +177,17 @@ async def get_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    total_points: float | None = None
     level_id = 0
     if current_user.role not in {"teacher", "admin"}:
-        _, level_id = await get_user_level_context(db, current_user)
+        total_points, level_id = await get_user_level_context(db, current_user)
         version = await get_cache_namespace_version(NS_TESTS)
         cache_key = cache_key_test_detail(test_id, level_id=level_id, version=version)
         cached = await get(cache_key)
         if cached is not None:
             return cached
 
-    t = await get_visible_test(db, test_id, current_user)
+    t = await get_visible_test(db, test_id, current_user, total_points=total_points)
     if t.published:
         payload = TestRead.model_validate(t).model_dump(mode="json")
         version = await get_cache_namespace_version(NS_TESTS)
@@ -228,7 +288,10 @@ async def get_test_content(
     current_user: User = Depends(get_current_user),
 ):
     is_teacher = current_user.role in {"teacher", "admin"}
-    _, level_id = await get_user_level_context(db, current_user)
+    total_points: float | None = None
+    level_id = -1
+    if not is_teacher:
+        total_points, level_id = await get_user_level_context(db, current_user)
     content_version = await get_cache_namespace_version(NS_TEST_CONTENT)
     cache_key = cache_key_test_content(test_id, level_id=level_id, version=content_version)
     if not is_teacher:
@@ -236,7 +299,7 @@ async def get_test_content(
         if cached is not None:
             return cached
 
-    test = await get_visible_test(db, test_id, current_user)
+    test = await get_visible_test(db, test_id, current_user, total_points=total_points)
 
     questions = await question_repo.list_questions_for_test(db, test_id=test_id, limit=500, offset=0)
     payload = {
@@ -246,6 +309,26 @@ async def get_test_content(
     if test.published:
         await set(cache_key, payload, ttl=TEST_CONTENT_TTL)
     return payload
+
+
+@router.put("/{test_id}/content", response_model=TestContentRead, status_code=status.HTTP_200_OK)
+async def replace_test_content(
+    test_id: int,
+    payload: TestContentWrite,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles("teacher", "admin")),
+):
+    test, questions = await test_service.replace_test_content(
+        db,
+        test_id=test_id,
+        payload=payload,
+        current_user=current_user,
+    )
+    await bump_cache_namespace(NS_QUESTIONS, NS_TEST_CONTENT, NS_TEST_SUMMARY)
+    return {
+        "test": TestRead.model_validate(test).model_dump(mode="json"),
+        "questions": [QuestionRead.model_validate(question).model_dump(mode="json") for question in questions],
+    }
 
 
 @router.post("/{test_id}/attempts/start", response_model=TestAttemptRead, status_code=status.HTTP_201_CREATED)

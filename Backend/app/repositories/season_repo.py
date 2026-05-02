@@ -44,6 +44,41 @@ async def get_season_by_code(session: AsyncSession, code: str) -> Season | None:
     return (await session.execute(stmt)).scalars().first()
 
 
+async def update_season(
+    session: AsyncSession,
+    season_id: int,
+    **changes,
+) -> Season | None:
+    season = await get_season(session, season_id)
+    if season is None:
+        return None
+
+    if "code" in changes:
+        season.code = changes["code"]
+    if "title" in changes:
+        season.title = changes["title"]
+    if "starts_at" in changes:
+        season.starts_at = changes["starts_at"]
+    if "ends_at" in changes:
+        season.ends_at = changes["ends_at"]
+    if "is_active" in changes:
+        season.is_active = changes["is_active"]
+
+    season.updated_at = utcnow_naive()
+    await session.flush()
+    await session.refresh(season)
+    return season
+
+
+async def delete_season(session: AsyncSession, season_id: int) -> bool:
+    season = await get_season(session, season_id)
+    if season is None:
+        return False
+    await session.delete(season)
+    await session.flush()
+    return True
+
+
 async def list_seasons(
     session: AsyncSession,
     *,

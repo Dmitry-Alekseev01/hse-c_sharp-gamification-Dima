@@ -4,6 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.access import can_manage_test, get_manageable_test, get_visible_test
 from app.api.deps import get_db
+from app.cache.redis_cache import (
+    ANSWERS_BY_TEST_TTL,
+    NS_TEST_SUMMARY,
+    cache_key_answers_for_test,
+    get,
+    get_cache_namespace_version,
+    set,
+)
 from app.core.security import get_current_user, require_roles
 from app.schemas.answer import AnswerCreate, AnswerRead, PendingOpenAnswerRead
 from app.schemas.grading import GradeRequest
@@ -123,10 +131,24 @@ async def get_answers_for_test(
 ):
     test = await get_visible_test(db, test_id, current_user)
     scoped_user_id: int | None = None
+    can_use_cache = False
+    cache_key = None
     if current_user.role not in {"teacher", "admin"}:
         if user_id is not None and user_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         scoped_user_id = current_user.id
+        version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+        cache_key = cache_key_answers_for_test(
+            test_id=test_id,
+            user_id=scoped_user_id,
+            limit=limit,
+            offset=offset,
+            version=version,
+        )
+        cached = await get(cache_key)
+        if cached is not None:
+            return cached
+        can_use_cache = True
     elif current_user.role == "teacher" and not can_manage_test(current_user, test):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
     else:
@@ -138,6 +160,9 @@ async def get_answers_for_test(
         offset=offset,
         user_id=scoped_user_id,
     )
+    if can_use_cache and cache_key is not None:
+        payload = [AnswerRead.model_validate(item).model_dump(mode="json") for item in answers]
+        await set(cache_key, payload, ttl=ANSWERS_BY_TEST_TTL)
     return answers
 
 

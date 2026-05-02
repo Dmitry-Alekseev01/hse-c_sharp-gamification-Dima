@@ -59,3 +59,8 @@ async def update_user_password(
     await session.flush()
     await session.refresh(user)
     return user
+
+
+async def delete_user(session, user: User) -> None:
+    await session.delete(user)
+    await session.flush()

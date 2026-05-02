@@ -54,6 +54,16 @@ class UserPasswordChange(BaseModel):
         return self
 
 
+class AdminUserPasswordReset(BaseModel):
+    new_password: str
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "AdminUserPasswordReset":
+        if not self.new_password:
+            raise ValueError("new_password must not be empty")
+        return self
+
+
 class PasswordChangeRead(BaseModel):
     detail: str
 

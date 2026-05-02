@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -149,6 +149,38 @@ class UserGamificationProgressRead(BaseModel):
     badges: list[GamificationBadgeRead]
 
 
+class LearningTestResultRead(BaseModel):
+    test_id: int
+    title: str
+    deadline: datetime | None
+    user_status: Literal["not_started", "in_progress", "completed"]
+    has_active_attempt: bool
+    completed_attempts: int
+    remaining_attempts: int
+    score_percent: float | None
+    score_value: float | None
+    max_score: float | None
+    completed_at: datetime | None
+
+
+class LearningDashboardRead(BaseModel):
+    user_id: int
+    username: str
+    total_points: float
+    streak_days: int
+    total_materials: int
+    total_tests: int
+    completed_tests: int
+    tests_with_score: int
+    average_score_percent: float
+    current_level: LevelRead | None
+    next_level: LevelRead | None
+    points_to_next_level: float
+    progress_percent: float
+    badges: list[GamificationBadgeRead]
+    test_results: list[LearningTestResultRead]
+
+
 class GroupAnalyticsSummaryRead(BaseModel):
     group_id: int
     members_count: int
@@ -215,6 +247,19 @@ class ChallengeCreate(BaseModel):
     ends_at: datetime | None = None
 
 
+class ChallengeUpdate(BaseModel):
+    code: str | None = None
+    title: str | None = None
+    description: str | None = None
+    period_type: ChallengePeriodType | None = None
+    event_type: ChallengeEventType | None = None
+    target_value: int | None = None
+    reward_points: float | None = None
+    is_active: bool | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
 class ChallengeRead(BaseModel):
     id: int
     code: str
@@ -265,6 +310,14 @@ class SeasonCreate(BaseModel):
     is_active: bool = True
 
 
+class SeasonUpdate(BaseModel):
+    code: str | None = None
+    title: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    is_active: bool | None = None
+
+
 class SeasonRead(BaseModel):
     id: int
     code: str
@@ -274,5 +327,113 @@ class SeasonRead(BaseModel):
     is_active: bool
     created_by: int | None
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RewardDefinitionCreate(BaseModel):
+    code: str
+    title: str
+    description: str | None = None
+    reward_type: str = "badge"
+    payload_json: dict[str, object] | None = None
+    is_active: bool = True
+
+
+class RewardDefinitionUpdate(BaseModel):
+    code: str | None = None
+    title: str | None = None
+    description: str | None = None
+    reward_type: str | None = None
+    payload_json: dict[str, object] | None = None
+    is_active: bool | None = None
+
+
+class RewardDefinitionRead(BaseModel):
+    id: int
+    code: str
+    title: str
+    description: str | None
+    reward_type: str
+    payload_json: dict[str, object] | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UnlockRuleSourceType(str, Enum):
+    ACHIEVEMENT = "achievement"
+    CHALLENGE = "challenge"
+    LEVEL = "level"
+
+
+class UnlockRuleCreate(BaseModel):
+    reward_definition_id: int
+    source_type: UnlockRuleSourceType
+    source_code: str | None = None
+    min_level_required: int | None = None
+    is_active: bool = True
+
+
+class UnlockRuleUpdate(BaseModel):
+    reward_definition_id: int | None = None
+    source_type: UnlockRuleSourceType | None = None
+    source_code: str | None = None
+    min_level_required: int | None = None
+    is_active: bool | None = None
+
+
+class UnlockRuleRead(BaseModel):
+    id: int
+    reward_definition_id: int
+    source_type: UnlockRuleSourceType
+    source_code: str | None
+    min_level_required: int | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AchievementCriteriaType(str, Enum):
+    TOTAL_POINTS = "total_points"
+    STREAK_DAYS = "streak_days"
+    COMPLETED_ATTEMPTS = "completed_attempts"
+
+
+class AchievementDefinitionCreate(BaseModel):
+    code: str
+    title: str
+    description: str
+    reward: str | None = None
+    criteria_type: AchievementCriteriaType
+    threshold_value: int
+    is_active: bool = True
+
+
+class AchievementDefinitionUpdate(BaseModel):
+    code: str | None = None
+    title: str | None = None
+    description: str | None = None
+    reward: str | None = None
+    criteria_type: AchievementCriteriaType | None = None
+    threshold_value: int | None = None
+    is_active: bool | None = None
+
+
+class AchievementDefinitionRead(BaseModel):
+    id: int
+    code: str
+    title: str
+    description: str
+    reward: str | None
+    criteria_type: AchievementCriteriaType
+    threshold_value: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
