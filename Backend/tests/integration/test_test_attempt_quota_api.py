@@ -186,3 +186,67 @@ async def test_start_attempt_returns_409_for_expired_active_then_allows_retry_on
     )
     assert start_second.status_code == 201, start_second.text
     assert start_second.json()["id"] != first_attempt_id
+
+
+async def test_attempts_resume_after_teacher_increases_max_attempts(client, db):
+    teacher = await seed_user(db, username="quota_teacher_increase@example.com", password="teach123", role="teacher")
+    student = await seed_user(db, username="quota_student_increase@example.com", password="stud123", role="user")
+
+    teacher_token = await login(client, teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+
+    create_test_response = await client.post(
+        "/api/v1/tests/",
+        headers=auth_headers(teacher_token),
+        json={
+            "title": "Attempts increase from admin flow",
+            "published": True,
+            "max_attempts": 1,
+        },
+    )
+    assert create_test_response.status_code == 201, create_test_response.text
+    test_id = create_test_response.json()["id"]
+
+    start_first = await client.post(
+        f"/api/v1/tests/{test_id}/attempts/start",
+        headers=auth_headers(student_token),
+    )
+    assert start_first.status_code == 201, start_first.text
+    first_attempt_id = start_first.json()["id"]
+
+    complete_first = await client.post(
+        f"/api/v1/tests/attempts/{first_attempt_id}/complete",
+        headers=auth_headers(student_token),
+    )
+    assert complete_first.status_code == 200, complete_first.text
+
+    blocked_start = await client.post(
+        f"/api/v1/tests/{test_id}/attempts/start",
+        headers=auth_headers(student_token),
+    )
+    assert blocked_start.status_code == 409, blocked_start.text
+    assert "No attempts remaining" in blocked_start.json()["detail"]
+
+    increase_attempts_response = await client.patch(
+        f"/api/v1/tests/{test_id}",
+        headers=auth_headers(teacher_token),
+        json={"max_attempts": 99},
+    )
+    assert increase_attempts_response.status_code == 200, increase_attempts_response.text
+    assert increase_attempts_response.json()["max_attempts"] == 99
+
+    quota_after_increase = await client.get(
+        f"/api/v1/tests/{test_id}/attempts/quota",
+        headers=auth_headers(student_token),
+    )
+    assert quota_after_increase.status_code == 200, quota_after_increase.text
+    assert quota_after_increase.json()["max_attempts"] == 99
+    assert quota_after_increase.json()["completed_attempts"] == 1
+    assert quota_after_increase.json()["remaining_attempts"] == 98
+
+    resumed_start = await client.post(
+        f"/api/v1/tests/{test_id}/attempts/start",
+        headers=auth_headers(student_token),
+    )
+    assert resumed_start.status_code == 201, resumed_start.text
+    assert resumed_start.json()["id"] != first_attempt_id

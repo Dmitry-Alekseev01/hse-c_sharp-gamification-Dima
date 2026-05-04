@@ -43,12 +43,22 @@ async def invalidate_auth_user_cache(*usernames: str) -> None:
 
 
 def _build_user_principal(payload: dict) -> User:
+    created_at = payload.get("created_at")
+    if isinstance(created_at, str):
+        try:
+            created_at = datetime.fromisoformat(created_at)
+        except ValueError:
+            created_at = None
+    elif not isinstance(created_at, datetime):
+        created_at = None
+
     return User(
         id=int(payload["id"]),
         username=str(payload["username"]),
         role=str(payload["role"]),
         full_name=payload.get("full_name"),
         password_hash=str(payload.get("password_hash") or ""),
+        created_at=created_at,
     )
 
 
@@ -72,6 +82,7 @@ async def _set_cached_auth_payload(
         "role": user.role,
         "full_name": user.full_name,
         "password_hash": user.password_hash,
+        "created_at": user.created_at.isoformat() if user.created_at is not None else None,
         "pwdv": pwdv,
     }
     try:
