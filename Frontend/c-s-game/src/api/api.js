@@ -109,6 +109,10 @@ export const fetchTests = async () => {
   return authFetch('/tests/');
 };
 
+export const fetchTestsCatalogMe = async () => {
+  return authFetch('/tests/catalog/me');
+};
+
 export const fetchTestContent = async (testId) => {
   return authFetch(`/tests/${testId}/content`);
 };
@@ -133,6 +137,10 @@ export const fetchUserAnswers = async (testId) => {
 
 export const fetchUserProgress = async (userId) => {
   return authFetch(`/analytics/user/${userId}/progress`);
+};
+
+export const fetchLearningDashboard = async (limit = 200) => {
+  return authFetch(`/analytics/me/learning-dashboard?limit=${encodeURIComponent(limit)}`);
 };
 
 export const fetchLeaderboard = async () => {
@@ -166,4 +174,12 @@ export const changePassword = async (currentPassword, newPassword) => {
       new_password: newPassword,
     }),
   });
+};
+
+export const fetchTestAttempts = async (testId) => {
+  return authFetch(`/tests/${testId}/attempts/me`);
+};
+
+export const fetchTestAttemptsQuota = async (testId) => {
+  return authFetch(`/tests/${testId}/attempts/quota`);
 };

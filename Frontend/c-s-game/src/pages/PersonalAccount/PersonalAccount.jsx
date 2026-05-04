@@ -10,20 +10,26 @@ const PersonalAccount = () => {
   if (error) return <div className="error">Ошибка: {error.message}</div>;
   if (!profile) return <div className="error">Пожалуйста, войдите в систему</div>;
 
-  const getRegistrationDate = (profile) => {
-    const dateString = profile.created_at || profile.registered_at || profile.date_joined;
+  // Форматирование даты регистрации
+  const formatDate = (dateString) => {
     if (!dateString) return null;
     const date = new Date(dateString);
-    return isNaN(date)
-      ? null
-      : date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    if (isNaN(date.getTime())) return null;
+    return date.toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
   };
 
-  let displayName = profile.full_name;
-  if (!displayName)
-    displayName =
-      profile.username && profile.username.includes('@') ? 'Пользователь' : profile.username;
-  const registrationDate = getRegistrationDate(profile);
+  const displayName =
+    profile.full_name ||
+    (profile.username && profile.username.includes('@') ? 'Пользователь' : profile.username);
+  const registrationDate =
+    formatDate(profile.created_at) ||
+    formatDate(profile.registered_at) ||
+    formatDate(profile.date_joined) ||
+    'Не указана';
 
   const materialsDisplay = `0/${stats.totalMaterials || 0}`;
   const testsDisplay = `${stats.completedTests || 0}/${stats.totalTests || 0}`;
@@ -59,7 +65,7 @@ const PersonalAccount = () => {
               <div className="detail-item">
                 <div className="detail-label">Дата регистрации:</div>
                 <div className="detail-value">
-                  <span className="date-value">{registrationDate || 'Не указана'}</span>
+                  <span className="date-value">{registrationDate}</span>
                 </div>
               </div>
             </div>
