@@ -16,8 +16,8 @@ const ChangePassword = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
   const validate = () => {
@@ -100,7 +100,11 @@ const ChangePassword = () => {
             <button type="submit" className="submit-btn" disabled={isLoading}>
               {isLoading ? 'Сохранение...' : 'Сменить пароль'}
             </button>
-            <button type="button" className="cancel-btn" onClick={() => navigate('/personal-account')}>
+            <button
+              type="button"
+              className="cancel-btn"
+              onClick={() => navigate('/personal-account')}
+            >
               Отмена
             </button>
           </div>

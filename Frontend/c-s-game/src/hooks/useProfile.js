@@ -20,14 +20,15 @@ export const useProfileStats = () => {
   });
 
   const answersQueries = useQueries({
-    queries: (tests || []).map(test => ({
+    queries: (tests || []).map((test) => ({
       queryKey: ['userAnswers', test.id],
       queryFn: () => fetchUserAnswers(test.id),
     })),
   });
 
-  const isLoading = profileLoading || testsLoading || materialsLoading || answersQueries.some(q => q.isLoading);
-  const error = profileError || answersQueries.find(q => q.error)?.error;
+  const isLoading =
+    profileLoading || testsLoading || materialsLoading || answersQueries.some((q) => q.isLoading);
+  const error = profileError || answersQueries.find((q) => q.error)?.error;
 
   const stats = (() => {
     if (!tests || !answersQueries.length) return {};

@@ -1,5 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchUserProfile, fetchUserProgress, fetchTests, fetchMaterials, fetchLevels } from '../api/api';
+import {
+  fetchUserProfile,
+  fetchUserProgress,
+  fetchTests,
+  fetchMaterials,
+  fetchLevels,
+} from '../api/api';
 
 export const useUserProfile = () => {
   return useQuery({
