@@ -1,64 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import { fetchTests, fetchUserAnswers, fetchTestContent } from '../../api/api';
+import { useTests, useUserScores, useQuestionsCount } from '../../hooks/useTests';
 import './Tests.css';
 
 const Tests = () => {
-  const [tests, setTests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [userScores, setUserScores] = useState({});
-  const [questionsCount, setQuestionsCount] = useState({});
+  const { data: tests, isLoading, error } = useTests();
+  const { data: userScores = {} } = useUserScores(tests);
+  const { data: questionsCount = {} } = useQuestionsCount(tests);
 
-  useEffect(() => {
-    const loadTests = async () => {
-      try {
-        const data = await fetchTests();
-        setTests(data);
-        
-        const countMap = {};
-        await Promise.all(
-          data.map(async (test) => {
-            try {
-              const content = await fetchTestContent(test.id);
-              countMap[test.id] = content.questions.length;
-            } catch (err) {
-              console.warn(`Не удалось загрузить вопросы для теста ${test.id}`);
-            }
-          })
-        );
-        setQuestionsCount(countMap);
-
-        const scoresMap = {};
-        await Promise.all(
-          data.map(async (test) => {
-            try {
-              const answers = await fetchUserAnswers(test.id);
-              if (answers && answers.length > 0) {
-                const userScore = answers.reduce((sum, ans) => sum + (ans.score || 0), 0);
-                scoresMap[test.id] = { userScore, maxScore: test.max_score };
-              }
-            } catch (e) {}
-          })
-        );
-        setUserScores(scoresMap);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadTests();
-  }, []);
+  if (isLoading) return <div className="loading">Загрузка тестов...</div>;
+  if (error) return <div className="error">Ошибка: {error.message}</div>;
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   const formatDateTime = (dateString) => {
@@ -81,9 +37,6 @@ const Tests = () => {
     if (deadlineDate && now > deadlineDate) return { text: 'Просрочен', class: 'status-overdue' };
     return { text: 'Не начат', class: 'status-not-started' };
   };
-
-  if (loading) return <div className="loading">Загрузка тестов...</div>;
-  if (error) return <div className="error">Ошибка: {error}</div>;
 
   return (
     <div className="tests-page">
@@ -118,11 +71,9 @@ const Tests = () => {
       <div className="tests-grid">
         {tests.map((test) => {
           const statusBadge = getStatusBadge(test);
-          const scoreInfo = userScores[test.id];
-          const userScore = scoreInfo?.userScore;
+          const userScore = userScores[test.id]?.userScore;
           const maxScore = test.max_score;
           const totalQuestions = questionsCount[test.id] || '?';
-
           return (
             <div key={test.id} className="test-card">
               <div className="test-header">

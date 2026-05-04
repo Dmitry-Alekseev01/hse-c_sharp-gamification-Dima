@@ -1,39 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
-import { fetchMaterials } from '../../api/api';
+import { useMaterials } from '../../hooks/useMaterials';
 import './Materials.css';
 
 const Materials = () => {
-  const [materials, setMaterials] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data: materials, isLoading, error } = useMaterials();
 
-  useEffect(() => {
-    const loadMaterials = async () => {
-      try {
-        const data = await fetchMaterials();
-        setMaterials(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadMaterials();
-  }, []);
+  if (isLoading) return <div className="loading">Загрузка материалов...</div>;
+  if (error) return <div className="error">Ошибка: {error.message}</div>;
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', {
+    return new Date(dateString).toLocaleDateString('ru-RU', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
     });
   };
-
-  if (loading) return <div className="loading">Загрузка материалов...</div>;
-  if (error) return <div className="error">Ошибка: {error}</div>;
 
   return (
     <div className="materials-page">
@@ -53,11 +36,9 @@ const Materials = () => {
                 <span className="material-date">{formatDate(material.created_at)}</span>
               )}
             </div>
-
             <div className="material-content">
               <p>{material.description || material.content_text?.slice(0, 200) + '...'}</p>
             </div>
-
             <div className="material-footer">
               <div className="material-links">
                 {material.content_url && (
@@ -70,8 +51,7 @@ const Materials = () => {
                     Документация
                   </a>
                 )}
-
-                {material.tests && material.tests.length > 0 && (
+                {material.tests?.length > 0 && (
                   <div className="tests-section">
                     <h4>Связанные тесты:</h4>
                     <div className="tests-list">
