@@ -30,6 +30,13 @@ from app.models.unlock_rule import UnlockRule
 from app.models.user import User
 from app.models.user_achievement import UserAchievement
 from app.models.user_reward import UserReward
+from app.cache.redis_cache import (
+    NS_MATERIALS,
+    NS_TEST_CONTENT,
+    NS_TESTS,
+    NS_TEST_SUMMARY,
+    bump_cache_namespace,
+)
 from app.core.material_taxonomy import MATERIAL_ATTACHMENT_KIND_VALUES, MATERIAL_BLOCK_TYPE_VALUES
 
 logger = logging.getLogger(__name__)
@@ -450,6 +457,24 @@ class MaterialAdminView(TeacherOwnedByFieldModelView):
     searchable_fields = ["title", "description"]
     sortable_fields = ["id", "title", "material_type", "status", "published_at", "author_id", "required_level_id"]
 
+    async def _invalidate_material_related_caches(self) -> None:
+        try:
+            await bump_cache_namespace(NS_MATERIALS, NS_TESTS, NS_TEST_CONTENT)
+        except Exception:
+            logger.exception("admin_cache_invalidate_failed model=Material")
+
+    async def after_create(self, request: Request, obj: Any) -> None:
+        await super().after_create(request, obj)
+        await self._invalidate_material_related_caches()
+
+    async def after_edit(self, request: Request, obj: Any) -> None:
+        await super().after_edit(request, obj)
+        await self._invalidate_material_related_caches()
+
+    async def after_delete(self, request: Request, obj: Any) -> None:
+        await super().after_delete(request, obj)
+        await self._invalidate_material_related_caches()
+
     async def validate(self, request: Request, data: dict[str, Any]) -> None:
         errors: dict[str, list[str]] = {}
         self._validate_required_str(data, "title", errors, max_len=300)
@@ -530,6 +555,24 @@ class TestAdminView(TeacherOwnedByFieldModelView):
         "required_level_id",
         "deadline",
     ]
+
+    async def _invalidate_test_related_caches(self) -> None:
+        try:
+            await bump_cache_namespace(NS_TESTS, NS_TEST_CONTENT, NS_TEST_SUMMARY, NS_MATERIALS)
+        except Exception:
+            logger.exception("admin_cache_invalidate_failed model=Test")
+
+    async def after_create(self, request: Request, obj: Any) -> None:
+        await super().after_create(request, obj)
+        await self._invalidate_test_related_caches()
+
+    async def after_edit(self, request: Request, obj: Any) -> None:
+        await super().after_edit(request, obj)
+        await self._invalidate_test_related_caches()
+
+    async def after_delete(self, request: Request, obj: Any) -> None:
+        await super().after_delete(request, obj)
+        await self._invalidate_test_related_caches()
 
     async def validate(self, request: Request, data: dict[str, Any]) -> None:
         errors: dict[str, list[str]] = {}
