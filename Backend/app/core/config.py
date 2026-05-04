@@ -51,6 +51,12 @@ class Settings(BaseSettings):
 
     # password hashing schemes (comma-separated in env, default bcrypt)
     hash_schemes: str = Field("bcrypt")
+    password_policy_min_length: int = Field(10)
+    password_policy_require_uppercase: bool = Field(True)
+    password_policy_require_lowercase: bool = Field(True)
+    password_policy_require_digit: bool = Field(True)
+    password_policy_require_special: bool = Field(True)
+    password_policy_disallow_whitespace: bool = Field(True)
 
     # Redis
     redis_url: str = Field("redis://redis:6379/0")
@@ -67,12 +73,19 @@ class Settings(BaseSettings):
     rate_limit_window_seconds: int = Field(60)
     rate_limit_default: int = Field(300)
     rate_limit_auth: int = Field(20)
+    rate_limit_tests_read: int = Field(1200)
+    rate_limit_answers_read: int = Field(900)
     rate_limit_answers: int = Field(180)
     rate_limit_analytics: int = Field(120)
+    rate_limit_learning_dashboard: int = Field(300)
     rate_limit_ai: int = Field(30)
     rate_limit_password: int = Field(10)
     rate_limit_admin: int = Field(120)
     rate_limit_admin_login: int = Field(10)
+
+    # Monitoring / observability
+    monitoring_enabled: bool = Field(True)
+    monitoring_metrics_token: str | None = None
 
     # Admin panel
     admin_enabled: bool = Field(True)
@@ -132,6 +145,9 @@ class Settings(BaseSettings):
 
     def get_admin_session_secret_key(self) -> str:
         return (self.admin_session_secret_key or self.secret_key).strip()
+
+    def get_monitoring_metrics_token(self) -> str:
+        return (self.monitoring_metrics_token or "").strip()
 
     def get_admin_session_same_site(self) -> str:
         if self.app_env.lower() == "production":

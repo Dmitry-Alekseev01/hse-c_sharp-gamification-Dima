@@ -37,7 +37,7 @@ async def create_seed_user(db, *, username: str, password: str, role: str, full_
 @pytest.mark.asyncio
 async def test_e2e_auth_register_login_and_me(client):
     username = "e2e_user@example.com"
-    password = "123456"
+    password = "User12345!"
     full_name = "E2E User"
 
     register_response = await client.post(

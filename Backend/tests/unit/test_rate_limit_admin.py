@@ -34,6 +34,30 @@ def test_scope_for_admin_user_password_reset_endpoint():
     assert limit == settings.rate_limit_password
 
 
+def test_scope_for_tests_read_endpoint():
+    scope, limit = RateLimitMiddleware._get_scope_and_limit("/api/v1/tests/", "GET")
+    assert scope == "tests_read"
+    assert limit == settings.rate_limit_tests_read
+
+
+def test_scope_for_answers_test_read_endpoint():
+    scope, limit = RateLimitMiddleware._get_scope_and_limit("/api/v1/answers/test/1", "GET")
+    assert scope == "answers_read"
+    assert limit == settings.rate_limit_answers_read
+
+
+def test_scope_for_answers_write_endpoint():
+    scope, limit = RateLimitMiddleware._get_scope_and_limit("/api/v1/answers/open/grade", "POST")
+    assert scope == "answers"
+    assert limit == settings.rate_limit_answers
+
+
+def test_scope_for_learning_dashboard_endpoint():
+    scope, limit = RateLimitMiddleware._get_scope_and_limit("/api/v1/analytics/me/learning-dashboard", "GET")
+    assert scope == "learning_dashboard"
+    assert limit == settings.rate_limit_learning_dashboard
+
+
 def test_identifier_prefers_x_real_ip_over_forwarded_for():
     request = _DummyRequest(
         headers={

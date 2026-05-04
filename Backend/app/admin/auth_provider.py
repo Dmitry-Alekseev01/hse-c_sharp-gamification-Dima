@@ -1,4 +1,5 @@
 import time
+import hmac
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -8,6 +9,7 @@ from starlette_admin.exceptions import LoginFailed
 from app.admin.mfa import split_password_and_totp, verify_totp_code
 from app.cache.redis_cache import get_redis_client
 from app.core.config import settings
+from app.core.security import build_password_version
 from app.db.session import AsyncSessionLocal
 from app.repositories import auth_repo, user_repo
 
@@ -19,6 +21,7 @@ class _AdminSecurityBackendUnavailable(Exception):
 class AdminOnlyAuthProvider(AuthProvider):
     session_user_id_key = "admin_user_id"
     session_username_key = "admin_username"
+    session_password_version_key = "admin_pwdv"
     allowed_roles = {"admin", "teacher"}
 
     async def login(
@@ -72,6 +75,7 @@ class AdminOnlyAuthProvider(AuthProvider):
                 self.session_user_id_key: int(user.id),
                 self.session_username_key: str(user.username),
                 "admin_role": str(user.role).lower(),
+                self.session_password_version_key: build_password_version(str(user.password_hash)),
             }
         )
         return response
@@ -91,6 +95,12 @@ class AdminOnlyAuthProvider(AuthProvider):
             user = await user_repo.get_user_by_id(db, user_id)
 
         if user is None or str(user.role).lower() not in self.allowed_roles:
+            request.session.clear()
+            return False
+
+        session_pwdv = request.session.get(self.session_password_version_key)
+        current_pwdv = build_password_version(str(user.password_hash))
+        if not isinstance(session_pwdv, str) or not hmac.compare_digest(session_pwdv, current_pwdv):
             request.session.clear()
             return False
 

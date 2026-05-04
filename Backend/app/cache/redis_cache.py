@@ -23,6 +23,9 @@ LEADERBOARD_TTL = 30
 QUESTION_LIST_TTL = 120
 TEST_CONTENT_TTL = 120
 ANSWERS_BY_TEST_TTL = 90
+TESTS_CATALOG_TTL = 90
+LEARNING_DASHBOARD_TTL = 300
+USER_LEVEL_CONTEXT_TTL = 60
 
 def get_redis_client() -> aioredis.Redis:
     global _redis
@@ -156,6 +159,43 @@ def cache_key_question_list(test_id: int, limit: int, offset: int, level_id: int
 
 def cache_key_test_content(test_id: int, level_id: int = 0, version: int = 0) -> str:
     return f"tests:content:v{version}:{level_id}:{test_id}"
+
+
+def cache_key_test_content_for_user(test_id: int, user_id: int, version: int = 0) -> str:
+    return f"tests:content:v{version}:user:{user_id}:{test_id}"
+
+
+def cache_key_tests_catalog_me(
+    *,
+    user_id: int,
+    published_only: bool,
+    limit: int,
+    tests_version: int = 0,
+    summary_version: int = 0,
+) -> str:
+    return f"tests:catalog:me:v{tests_version}:s{summary_version}:u{user_id}:p{int(published_only)}:l{limit}"
+
+
+def cache_key_learning_dashboard(
+    *,
+    user_id: int,
+    limit: int,
+    tests_version: int = 0,
+    materials_version: int = 0,
+    summary_version: int = 0,
+) -> str:
+    return (
+        f"analytics:learning-dashboard:v{tests_version}:m{materials_version}:s{summary_version}:"
+        f"u{user_id}:l{limit}"
+    )
+
+
+def cache_key_learning_dashboard_stale(*, user_id: int, limit: int) -> str:
+    return f"analytics:learning-dashboard:stale:u{user_id}:l{limit}"
+
+
+def cache_key_user_level_context(*, user_id: int, summary_version: int = 0) -> str:
+    return f"analytics:user-level:v{summary_version}:u{user_id}"
 
 
 def cache_key_answers_for_test(

@@ -1,5 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.access import (
@@ -16,13 +17,16 @@ from app.cache.redis_cache import (
     NS_TEST_CONTENT,
     NS_TEST_SUMMARY,
     TEST_CONTENT_TTL,
+    TESTS_CATALOG_TTL,
     TESTS_LIST_TTL,
     TEST_DETAIL_TTL,
     TEST_SUMMARY_TTL,
     bump_cache_namespace,
+    cache_key_test_content_for_user,
     cache_key_test_content,
     cache_key_test_detail,
     cache_key_test_list,
+    cache_key_tests_catalog_me,
     cache_key_test_summary,
     get_cache_namespace_version,
     get,
@@ -127,6 +131,22 @@ async def list_tests_with_my_state(
     if not published_only and current_user.role not in {"teacher", "admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
+    cache_key = None
+    should_cache = current_user.role != "admin"
+    if should_cache:
+        tests_version = await get_cache_namespace_version(NS_TESTS)
+        summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+        cache_key = cache_key_tests_catalog_me(
+            user_id=current_user.id,
+            published_only=published_only,
+            limit=limit,
+            tests_version=tests_version,
+            summary_version=summary_version,
+        )
+        cached = await get(cache_key)
+        if cached is not None:
+            return cached
+
     total_points: float | None = None
     if published_only and current_user.role not in {"teacher", "admin"}:
         total_points, _ = await get_user_level_context(db, current_user)
@@ -168,6 +188,12 @@ async def list_tests_with_my_state(
             )
         )
 
+    if should_cache and cache_key is not None:
+        await set(
+            cache_key,
+            [item.model_dump(mode="json") for item in payload],
+            ttl=TESTS_CATALOG_TTL,
+        )
     return payload
 
 
@@ -289,15 +315,18 @@ async def get_test_content(
 ):
     is_teacher = current_user.role in {"teacher", "admin"}
     total_points: float | None = None
-    level_id = -1
-    if not is_teacher:
-        total_points, level_id = await get_user_level_context(db, current_user)
     content_version = await get_cache_namespace_version(NS_TEST_CONTENT)
-    cache_key = cache_key_test_content(test_id, level_id=level_id, version=content_version)
+    cache_key = cache_key_test_content(test_id, level_id=-1, version=content_version)
     if not is_teacher:
+        cache_key = cache_key_test_content_for_user(
+            test_id=test_id,
+            user_id=current_user.id,
+            version=content_version,
+        )
         cached = await get(cache_key)
         if cached is not None:
             return cached
+        total_points, _ = await get_user_level_context(db, current_user)
 
     test = await get_visible_test(db, test_id, current_user, total_points=total_points)
 
@@ -341,7 +370,7 @@ async def start_test_attempt(
     try:
         return await resolve_attempt_for_user(db, test, current_user.id)
     except AttemptPolicyError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(exc)})
 
 
 @router.get("/{test_id}/attempts/me", response_model=List[TestAttemptRead], status_code=status.HTTP_200_OK)

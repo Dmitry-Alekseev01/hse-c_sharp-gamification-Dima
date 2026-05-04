@@ -16,3 +16,6 @@ class Level(Base):
 
     materials = relationship("Material", back_populates="required_level", lazy="selectin")
     tests = relationship("Test", back_populates="required_level", lazy="selectin")
+
+    def __str__(self) -> str:
+        return f"{self.id}: {self.name}"

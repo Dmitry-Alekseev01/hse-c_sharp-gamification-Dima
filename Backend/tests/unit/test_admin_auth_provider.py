@@ -5,6 +5,7 @@ from starlette.responses import Response
 from starlette_admin.exceptions import LoginFailed
 
 from app.admin.auth_provider import AdminOnlyAuthProvider
+from app.core.security import build_password_version
 from app.admin.mfa import verify_totp_code
 from app.core.config import settings
 
@@ -66,6 +67,11 @@ class _FakeRedis:
         return deleted
 
 
+_ADMIN_HASH = "admin-hash-v1"
+_TEACHER_HASH = "teacher-hash-v1"
+_USER_HASH = "user-hash-v1"
+
+
 @pytest.mark.asyncio
 async def test_admin_auth_provider_login_allows_admin_only(monkeypatch):
     provider = AdminOnlyAuthProvider()
@@ -74,7 +80,7 @@ async def test_admin_auth_provider_login_allows_admin_only(monkeypatch):
 
     async def fake_authenticate_user(db, username: str, password: str):
         del db, username, password
-        return SimpleNamespace(id=77, username="admin@example.com", role="admin")
+        return SimpleNamespace(id=77, username="admin@example.com", role="admin", password_hash=_ADMIN_HASH)
 
     fake_redis = _FakeRedis()
     monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
@@ -87,6 +93,7 @@ async def test_admin_auth_provider_login_allows_admin_only(monkeypatch):
     assert request.session["admin_user_id"] == 77
     assert request.session["admin_username"] == "admin@example.com"
     assert request.session["admin_role"] == "admin"
+    assert request.session["admin_pwdv"] == build_password_version(_ADMIN_HASH)
 
 
 @pytest.mark.asyncio
@@ -97,7 +104,7 @@ async def test_admin_auth_provider_login_allows_teacher(monkeypatch):
 
     async def fake_authenticate_user(db, username: str, password: str):
         del db, username, password
-        return SimpleNamespace(id=5, username="teacher@example.com", role="teacher")
+        return SimpleNamespace(id=5, username="teacher@example.com", role="teacher", password_hash=_TEACHER_HASH)
 
     fake_redis = _FakeRedis()
     monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
@@ -110,6 +117,7 @@ async def test_admin_auth_provider_login_allows_teacher(monkeypatch):
     assert request.session["admin_user_id"] == 5
     assert request.session["admin_username"] == "teacher@example.com"
     assert request.session["admin_role"] == "teacher"
+    assert request.session["admin_pwdv"] == build_password_version(_TEACHER_HASH)
 
 
 @pytest.mark.asyncio
@@ -120,7 +128,7 @@ async def test_admin_auth_provider_login_rejects_non_operator(monkeypatch):
 
     async def fake_authenticate_user(db, username: str, password: str):
         del db, username, password
-        return SimpleNamespace(id=5, username="student@example.com", role="user")
+        return SimpleNamespace(id=5, username="student@example.com", role="user", password_hash=_USER_HASH)
 
     fake_redis = _FakeRedis()
     monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
@@ -135,12 +143,19 @@ async def test_admin_auth_provider_login_rejects_non_operator(monkeypatch):
 async def test_admin_auth_provider_is_authenticated_sets_admin_user(monkeypatch):
     provider = AdminOnlyAuthProvider()
     request = _DummyRequest()
-    request.session.update({"admin_user_id": 10, "admin_username": "admin@example.com", "admin_role": "admin"})
+    request.session.update(
+        {
+            "admin_user_id": 10,
+            "admin_username": "admin@example.com",
+            "admin_role": "admin",
+            "admin_pwdv": build_password_version(_ADMIN_HASH),
+        }
+    )
 
     async def fake_get_user_by_id(db, user_id: int):
         del db
         if user_id == 10:
-            return SimpleNamespace(id=10, username="admin@example.com", role="admin")
+            return SimpleNamespace(id=10, username="admin@example.com", role="admin", password_hash=_ADMIN_HASH)
         return None
 
     monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
@@ -159,11 +174,18 @@ async def test_admin_auth_provider_is_authenticated_sets_admin_user(monkeypatch)
 async def test_admin_auth_provider_is_authenticated_clears_invalid_session(monkeypatch):
     provider = AdminOnlyAuthProvider()
     request = _DummyRequest()
-    request.session.update({"admin_user_id": 11, "admin_username": "student@example.com", "admin_role": "user"})
+    request.session.update(
+        {
+            "admin_user_id": 11,
+            "admin_username": "student@example.com",
+            "admin_role": "user",
+            "admin_pwdv": build_password_version(_USER_HASH),
+        }
+    )
 
     async def fake_get_user_by_id(db, user_id: int):
         del db, user_id
-        return SimpleNamespace(id=11, username="student@example.com", role="user")
+        return SimpleNamespace(id=11, username="student@example.com", role="user", password_hash=_USER_HASH)
 
     monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
     monkeypatch.setattr("app.admin.auth_provider.user_repo.get_user_by_id", fake_get_user_by_id)
@@ -178,12 +200,19 @@ async def test_admin_auth_provider_is_authenticated_clears_invalid_session(monke
 async def test_admin_auth_provider_is_authenticated_allows_teacher(monkeypatch):
     provider = AdminOnlyAuthProvider()
     request = _DummyRequest()
-    request.session.update({"admin_user_id": 12, "admin_username": "teacher@example.com", "admin_role": "teacher"})
+    request.session.update(
+        {
+            "admin_user_id": 12,
+            "admin_username": "teacher@example.com",
+            "admin_role": "teacher",
+            "admin_pwdv": build_password_version(_TEACHER_HASH),
+        }
+    )
 
     async def fake_get_user_by_id(db, user_id: int):
         del db
         if user_id == 12:
-            return SimpleNamespace(id=12, username="teacher@example.com", role="teacher")
+            return SimpleNamespace(id=12, username="teacher@example.com", role="teacher", password_hash=_TEACHER_HASH)
         return None
 
     monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
@@ -199,12 +228,47 @@ async def test_admin_auth_provider_is_authenticated_allows_teacher(monkeypatch):
 async def test_admin_auth_provider_logout_clears_session():
     provider = AdminOnlyAuthProvider()
     request = _DummyRequest()
-    request.session.update({"admin_user_id": 1, "admin_username": "admin@example.com", "admin_role": "admin"})
+    request.session.update(
+        {
+            "admin_user_id": 1,
+            "admin_username": "admin@example.com",
+            "admin_role": "admin",
+            "admin_pwdv": build_password_version(_ADMIN_HASH),
+        }
+    )
     response = Response()
 
     result = await provider.logout(request, response)
 
     assert result is response
+    assert request.session == {}
+
+
+@pytest.mark.asyncio
+async def test_admin_auth_provider_is_authenticated_clears_session_after_password_change(monkeypatch):
+    provider = AdminOnlyAuthProvider()
+    request = _DummyRequest()
+    request.session.update(
+        {
+            "admin_user_id": 20,
+            "admin_username": "admin@example.com",
+            "admin_role": "admin",
+            "admin_pwdv": build_password_version("old-hash"),
+        }
+    )
+
+    async def fake_get_user_by_id(db, user_id: int):
+        del db
+        if user_id == 20:
+            return SimpleNamespace(id=20, username="admin@example.com", role="admin", password_hash="new-hash")
+        return None
+
+    monkeypatch.setattr("app.admin.auth_provider.AsyncSessionLocal", lambda: _DummySessionContext())
+    monkeypatch.setattr("app.admin.auth_provider.user_repo.get_user_by_id", fake_get_user_by_id)
+
+    is_auth = await provider.is_authenticated(request)
+
+    assert is_auth is False
     assert request.session == {}
 
 
@@ -256,7 +320,7 @@ async def test_admin_auth_provider_login_with_mfa_suffix(monkeypatch):
     async def fake_authenticate_user(db, username: str, password: str):
         del db, username
         assert password == "secret"
-        return SimpleNamespace(id=77, username="admin@example.com", role="admin")
+        return SimpleNamespace(id=77, username="admin@example.com", role="admin", password_hash=_ADMIN_HASH)
 
     fake_redis = _FakeRedis()
     monkeypatch.setattr(settings, "admin_mfa_enabled", True)
@@ -289,7 +353,7 @@ async def test_admin_auth_provider_login_with_mfa_invalid_code(monkeypatch):
 
     async def fake_authenticate_user(db, username: str, password: str):
         del db, username, password
-        return SimpleNamespace(id=77, username="admin@example.com", role="admin")
+        return SimpleNamespace(id=77, username="admin@example.com", role="admin", password_hash=_ADMIN_HASH)
 
     fake_redis = _FakeRedis()
     monkeypatch.setattr(settings, "admin_mfa_enabled", True)

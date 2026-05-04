@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.security import get_current_user, require_roles
+from app.core.security import get_current_user, invalidate_auth_user_cache, require_roles
 from app.schemas.user import (
     AdminUserCreate,
     AdminUserPasswordReset,
@@ -151,6 +151,7 @@ async def update_user_role(
     user.role = payload.role
     await db.flush()
     await db.refresh(user)
+    await invalidate_auth_user_cache(user.username)
     return user
 
 

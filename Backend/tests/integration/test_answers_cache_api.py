@@ -123,13 +123,20 @@ async def test_answers_by_test_is_cached_and_invalidated_after_new_submission(cl
     )
 
     call_counter = {"count": 0}
+    visible_counter = {"count": 0}
     original_get_answers = answers_router.answer_repo.get_answers_for_test
+    original_get_visible_test = answers_router.get_visible_test
 
     async def counted_get_answers(*args, **kwargs):
         call_counter["count"] += 1
         return await original_get_answers(*args, **kwargs)
 
+    async def counted_get_visible_test(*args, **kwargs):
+        visible_counter["count"] += 1
+        return await original_get_visible_test(*args, **kwargs)
+
     monkeypatch.setattr(answers_router.answer_repo, "get_answers_for_test", counted_get_answers, raising=True)
+    monkeypatch.setattr(answers_router, "get_visible_test", counted_get_visible_test, raising=True)
 
     first_response = await client.get(f"/api/v1/answers/test/{test_payload['id']}", headers=auth_headers(student_token))
     assert first_response.status_code == 200, first_response.text
@@ -140,6 +147,7 @@ async def test_answers_by_test_is_cached_and_invalidated_after_new_submission(cl
     assert second_response.status_code == 200, second_response.text
     assert len(second_response.json()) == 1
     assert call_counter["count"] == 1
+    assert visible_counter["count"] == 1
 
     await _submit_answer(
         client,
@@ -149,11 +157,13 @@ async def test_answers_by_test_is_cached_and_invalidated_after_new_submission(cl
         answer_payload=str(question_two["choices"][0]["id"]),
         attempt_id=attempt["id"],
     )
+    before_third_get_visible = visible_counter["count"]
 
     third_response = await client.get(f"/api/v1/answers/test/{test_payload['id']}", headers=auth_headers(student_token))
     assert third_response.status_code == 200, third_response.text
     assert len(third_response.json()) == 2
     assert call_counter["count"] == 2
+    assert visible_counter["count"] == before_third_get_visible + 1
 
     fourth_response = await client.get(f"/api/v1/answers/test/{test_payload['id']}", headers=auth_headers(student_token))
     assert fourth_response.status_code == 200, fourth_response.text

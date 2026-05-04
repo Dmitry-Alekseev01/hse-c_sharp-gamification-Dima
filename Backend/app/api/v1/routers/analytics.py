@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from typing import List
 
@@ -8,11 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.access import ensure_teacher_or_admin_can_access_user
 from app.api.deps import get_db
 from app.cache.redis_cache import (
+    LEARNING_DASHBOARD_TTL,
     LEADERBOARD_TTL,
+    NS_MATERIALS,
     NS_LEADERBOARD,
+    NS_TESTS,
+    NS_TEST_SUMMARY,
+    cache_key_learning_dashboard,
+    cache_key_learning_dashboard_stale,
     cache_key_leaderboard_page,
     get,
     get_cache_namespace_version,
+    redis_lock,
     set,
 )
 from app.core.security import get_current_user, require_roles
@@ -142,91 +150,139 @@ async def get_my_learning_dashboard(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    progress = await analytics_repo.get_gamification_progress(db, current_user.id)
-    if progress is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    total_points = float(progress.get("total_points") or 0.0)
-    total_materials = await material_repo.count_visible_materials_for_user(
-        db,
-        role=current_user.role,
-        total_points=total_points,
-    )
-
-    tests = await test_repo.list_tests(db, published_only=True, limit=limit)
-    if current_user.role not in {"teacher", "admin"}:
-        tests = [
-            test
-            for test in tests
-            if test.required_level is None or float(test.required_level.required_points or 0.0) <= total_points
-        ]
-
-    state_map = await test_repo.get_user_test_state_map(
-        db,
+    tests_version = await get_cache_namespace_version(NS_TESTS)
+    materials_version = await get_cache_namespace_version(NS_MATERIALS)
+    summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+    cache_key = cache_key_learning_dashboard(
         user_id=current_user.id,
-        tests=tests,
+        limit=limit,
+        tests_version=tests_version,
+        materials_version=materials_version,
+        summary_version=summary_version,
     )
+    stale_cache_key = cache_key_learning_dashboard_stale(user_id=current_user.id, limit=limit)
+    stale_ttl = max(LEARNING_DASHBOARD_TTL * 6, 600)
+    async def _build_payload() -> dict:
+        progress = await analytics_repo.get_gamification_progress(db, current_user.id)
+        if progress is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    test_results: list[dict] = []
-    completed_tests = 0
-    tests_with_score = 0
-    score_sum = 0.0
-
-    for test in tests:
-        state = state_map.get(test.id, {})
-        user_status = str(state.get("user_status", "not_started"))
-        completed_attempts = int(state.get("completed_attempts", 0))
-        remaining_attempts = int(state.get("remaining_attempts", max(int(test.max_attempts or 1), 1)))
-        has_active_attempt = bool(state.get("has_active_attempt", False))
-        score_value = state.get("user_score")
-        max_score = state.get("user_max_score")
-        if max_score is None and test.max_score is not None:
-            max_score = float(test.max_score)
-
-        score_percent = None
-        if score_value is not None and max_score is not None and float(max_score) > 0:
-            score_percent = round((float(score_value) / float(max_score)) * 100.0, 2)
-            score_sum += float(score_percent)
-            tests_with_score += 1
-
-        if user_status == "completed":
-            completed_tests += 1
-
-        test_results.append(
-            {
-                "test_id": int(test.id),
-                "title": test.title,
-                "deadline": test.deadline,
-                "user_status": user_status,
-                "has_active_attempt": has_active_attempt,
-                "completed_attempts": completed_attempts,
-                "remaining_attempts": remaining_attempts,
-                "score_percent": score_percent,
-                "score_value": float(score_value) if score_value is not None else None,
-                "max_score": float(max_score) if max_score is not None else None,
-                "completed_at": state.get("latest_completed_at"),
-            }
+        total_points = float(progress.get("total_points") or 0.0)
+        total_materials = await material_repo.count_visible_materials_for_user(
+            db,
+            role=current_user.role,
+            total_points=total_points,
         )
 
-    average_score_percent = round(score_sum / tests_with_score, 2) if tests_with_score > 0 else 0.0
+        tests = await test_repo.list_tests(db, published_only=True, limit=limit)
+        if current_user.role not in {"teacher", "admin"}:
+            tests = [
+                test
+                for test in tests
+                if test.required_level is None or float(test.required_level.required_points or 0.0) <= total_points
+            ]
 
-    return {
-        "user_id": int(progress["user_id"]),
-        "username": progress["username"],
-        "total_points": total_points,
-        "streak_days": int(progress.get("streak_days") or 0),
-        "total_materials": total_materials,
-        "total_tests": len(tests),
-        "completed_tests": completed_tests,
-        "tests_with_score": tests_with_score,
-        "average_score_percent": average_score_percent,
-        "current_level": progress.get("current_level"),
-        "next_level": progress.get("next_level"),
-        "points_to_next_level": float(progress.get("points_to_next_level") or 0.0),
-        "progress_percent": float(progress.get("progress_percent") or 0.0),
-        "badges": progress.get("badges") or [],
-        "test_results": test_results,
-    }
+        state_map = await test_repo.get_user_test_state_map(
+            db,
+            user_id=current_user.id,
+            tests=tests,
+        )
+
+        test_results: list[dict] = []
+        completed_tests = 0
+        tests_with_score = 0
+        score_sum = 0.0
+
+        for test in tests:
+            state = state_map.get(test.id, {})
+            user_status = str(state.get("user_status", "not_started"))
+            completed_attempts = int(state.get("completed_attempts", 0))
+            remaining_attempts = int(state.get("remaining_attempts", max(int(test.max_attempts or 1), 1)))
+            has_active_attempt = bool(state.get("has_active_attempt", False))
+            score_value = state.get("user_score")
+            max_score = state.get("user_max_score")
+            if max_score is None and test.max_score is not None:
+                max_score = float(test.max_score)
+
+            score_percent = None
+            if score_value is not None and max_score is not None and float(max_score) > 0:
+                score_percent = round((float(score_value) / float(max_score)) * 100.0, 2)
+                score_sum += float(score_percent)
+                tests_with_score += 1
+
+            if user_status == "completed":
+                completed_tests += 1
+
+            test_results.append(
+                {
+                    "test_id": int(test.id),
+                    "title": test.title,
+                    "deadline": test.deadline,
+                    "user_status": user_status,
+                    "has_active_attempt": has_active_attempt,
+                    "completed_attempts": completed_attempts,
+                    "remaining_attempts": remaining_attempts,
+                    "score_percent": score_percent,
+                    "score_value": float(score_value) if score_value is not None else None,
+                    "max_score": float(max_score) if max_score is not None else None,
+                    "completed_at": state.get("latest_completed_at"),
+                }
+            )
+
+        average_score_percent = round(score_sum / tests_with_score, 2) if tests_with_score > 0 else 0.0
+        payload = {
+            "user_id": int(progress["user_id"]),
+            "username": progress["username"],
+            "total_points": total_points,
+            "streak_days": int(progress.get("streak_days") or 0),
+            "total_materials": total_materials,
+            "total_tests": len(tests),
+            "completed_tests": completed_tests,
+            "tests_with_score": tests_with_score,
+            "average_score_percent": average_score_percent,
+            "current_level": progress.get("current_level"),
+            "next_level": progress.get("next_level"),
+            "points_to_next_level": float(progress.get("points_to_next_level") or 0.0),
+            "progress_percent": float(progress.get("progress_percent") or 0.0),
+            "badges": progress.get("badges") or [],
+            "test_results": test_results,
+        }
+        return LearningDashboardRead.model_validate(payload).model_dump(mode="json")
+
+    # Fast path
+    cached = await get(cache_key)
+    if cached is not None:
+        return cached
+    stale_cached = await get(stale_cache_key)
+
+    # Anti-stampede path for concurrent misses.
+    lock_key = f"lock:{cache_key}"
+    try:
+        async with redis_lock(lock_key, timeout=15) as locked:
+            if not locked:
+                # Another request is likely computing fresh data. Return stale fast.
+                if stale_cached is not None:
+                    return stale_cached
+                # Small wait loop to catch just-written fresh cache and avoid duplicate DB-heavy work.
+                for _ in range(4):
+                    await asyncio.sleep(0.05)
+                    warmed = await get(cache_key)
+                    if warmed is not None:
+                        return warmed
+            cached_after_lock = await get(cache_key)
+            if cached_after_lock is not None:
+                return cached_after_lock
+            payload = await _build_payload()
+            await set(cache_key, payload, ttl=LEARNING_DASHBOARD_TTL)
+            await set(stale_cache_key, payload, ttl=stale_ttl)
+            return payload
+    except Exception:
+        if stale_cached is not None:
+            return stale_cached
+        payload = await _build_payload()
+        await set(cache_key, payload, ttl=LEARNING_DASHBOARD_TTL)
+        await set(stale_cache_key, payload, ttl=stale_ttl)
+        return payload
 
 
 @router.get("/me/achievements", response_model=List[UserAchievementRead], status_code=status.HTTP_200_OK)

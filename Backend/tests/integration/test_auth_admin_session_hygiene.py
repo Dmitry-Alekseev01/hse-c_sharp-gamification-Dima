@@ -51,7 +51,7 @@ async def test_register_clears_admin_session_cookie(client):
         headers={"Cookie": "admin_session=stale_admin_cookie"},
         json={
             "username": "session_hygiene_register@example.com",
-            "password": "user123",
+            "password": "User12345!",
             "full_name": "Session Hygiene",
         },
     )
@@ -59,3 +59,16 @@ async def test_register_clears_admin_session_cookie(client):
     assert response.status_code == 201, response.text
     _assert_admin_cookie_cleared(response)
 
+
+async def test_register_rejects_weak_password_by_policy(client):
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "session_hygiene_register_weak@example.com",
+            "password": "weakpass123",
+            "full_name": "Session Hygiene Weak",
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    assert "uppercase" in response.json()["detail"]

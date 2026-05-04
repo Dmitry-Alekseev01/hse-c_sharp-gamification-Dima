@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.admin.views import (
+    AchievementDefinitionAdminView,
     ChallengeAdminView,
     GroupMembershipAdminView,
     MaterialAdminView,
@@ -17,6 +18,7 @@ from app.admin.views import (
     get_admin_views,
 )
 from app.models.challenge import Challenge
+from app.models.achievement_definition import AchievementDefinition
 from app.models.group import GroupMembership, StudyGroup
 from app.models.material import Material
 from app.models.material_attachment import MaterialAttachment
@@ -73,6 +75,19 @@ async def test_test_view_teacher_before_create_sets_author():
     assert data["author_id"] == 11
 
 
+async def test_material_and_test_views_use_required_level_relation_field():
+    material_view = MaterialAdminView(Material)
+    test_view = _TestAdminView(Test)
+
+    material_field_names = [field.name for field in material_view.fields]
+    test_field_names = [field.name for field in test_view.fields]
+
+    assert "required_level" in material_field_names
+    assert "required_level_id" not in material_field_names
+    assert "required_level" in test_field_names
+    assert "required_level_id" not in test_field_names
+
+
 async def test_group_views_teacher_access_enabled():
     teacher_request = _DummyRequest(role="teacher", user_id=3)
     group_view = StudyGroupAdminView(StudyGroup)
@@ -94,6 +109,7 @@ async def test_admin_views_contains_material_block_and_attachment_views():
 
     assert MaterialBlock.__name__ in model_names
     assert MaterialAttachment.__name__ in model_names
+    assert AchievementDefinition.__name__ in model_names
 
     block_view = next(view for view in views if getattr(view.model, "__name__", "") == MaterialBlock.__name__)
     attachment_view = next(
@@ -115,13 +131,16 @@ async def test_config_views_are_admin_only():
     unlock_view = UnlockRuleAdminView(UnlockRule)
     challenge_view = ChallengeAdminView(Challenge)
     season_view = SeasonAdminView(Season)
+    achievement_view = AchievementDefinitionAdminView(AchievementDefinition)
 
     assert reward_view.is_accessible(admin_request) is True
     assert unlock_view.is_accessible(admin_request) is True
     assert challenge_view.is_accessible(admin_request) is True
     assert season_view.is_accessible(admin_request) is True
+    assert achievement_view.is_accessible(admin_request) is True
 
     assert reward_view.is_accessible(teacher_request) is False
     assert unlock_view.is_accessible(teacher_request) is False
     assert challenge_view.is_accessible(teacher_request) is False
     assert season_view.is_accessible(teacher_request) is False
+    assert achievement_view.is_accessible(teacher_request) is False

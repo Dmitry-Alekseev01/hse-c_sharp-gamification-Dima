@@ -1,6 +1,9 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from app.core.security import get_password_hash
+from app.models.test_attempt import TestAttempt as AttemptModel
 from app.models.user import User
 
 pytestmark = pytest.mark.asyncio
@@ -69,6 +72,13 @@ async def test_attempt_quota_endpoint_and_retry_limit(client, db):
     assert start_first.status_code == 201, start_first.text
     first_attempt_id = start_first.json()["id"]
 
+    start_first_again = await client.post(
+        f"/api/v1/tests/{test_id}/attempts/start",
+        headers=auth_headers(student_token),
+    )
+    assert start_first_again.status_code == 201, start_first_again.text
+    assert start_first_again.json()["id"] == first_attempt_id
+
     quota_with_active = await client.get(
         f"/api/v1/tests/{test_id}/attempts/quota",
         headers=auth_headers(student_token),
@@ -120,3 +130,59 @@ async def test_attempt_quota_endpoint_and_retry_limit(client, db):
     )
     assert start_third.status_code == 409, start_third.text
     assert "No attempts remaining" in start_third.json()["detail"]
+
+
+async def test_start_attempt_returns_409_for_expired_active_then_allows_retry_on_next_call(client, db):
+    teacher = await seed_user(db, username="quota_teacher_expired@example.com", password="teach123", role="teacher")
+    student = await seed_user(db, username="quota_student_expired@example.com", password="stud123", role="user")
+
+    teacher_token = await login(client, teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+
+    create_test_response = await client.post(
+        "/api/v1/tests/",
+        headers=auth_headers(teacher_token),
+        json={
+            "title": "Attempts expired active flow",
+            "published": True,
+            "max_attempts": 2,
+            "time_limit_minutes": 1,
+        },
+    )
+    assert create_test_response.status_code == 201, create_test_response.text
+    test_id = create_test_response.json()["id"]
+
+    start_first = await client.post(
+        f"/api/v1/tests/{test_id}/attempts/start",
+        headers=auth_headers(student_token),
+    )
+    assert start_first.status_code == 201, start_first.text
+    first_attempt_id = start_first.json()["id"]
+
+    attempt = await db.get(AttemptModel, first_attempt_id)
+    assert attempt is not None
+    attempt.started_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=2)
+    await db.flush()
+
+    start_after_expire = await client.post(
+        f"/api/v1/tests/{test_id}/attempts/start",
+        headers=auth_headers(student_token),
+    )
+    assert start_after_expire.status_code == 409, start_after_expire.text
+    assert "time limit" in start_after_expire.json()["detail"].lower()
+
+    quota_after_expire = await client.get(
+        f"/api/v1/tests/{test_id}/attempts/quota",
+        headers=auth_headers(student_token),
+    )
+    assert quota_after_expire.status_code == 200, quota_after_expire.text
+    assert quota_after_expire.json()["completed_attempts"] == 1
+    assert quota_after_expire.json()["remaining_attempts"] == 1
+    assert quota_after_expire.json()["has_active_attempt"] is False
+
+    start_second = await client.post(
+        f"/api/v1/tests/{test_id}/attempts/start",
+        headers=auth_headers(student_token),
+    )
+    assert start_second.status_code == 201, start_second.text
+    assert start_second.json()["id"] != first_attempt_id

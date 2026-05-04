@@ -275,3 +275,59 @@ async def test_tests_catalog_me_teacher_can_view_own_unpublished(client, db):
     ids = {item["id"] for item in response.json()}
     assert published["id"] in ids
     assert draft["id"] in ids
+
+
+async def test_tests_catalog_me_reuses_cache_for_repeat_requests(client, db, monkeypatch):
+    from app.api.v1.routers import tests as tests_router
+
+    teacher = await seed_user(db, username="catalog_cache_teacher@example.com", password="teach123", role="teacher")
+    student = await seed_user(db, username="catalog_cache_student@example.com", password="stud123", role="user")
+    teacher_token = await login(client, teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+
+    created_test = await _create_test(
+        client,
+        teacher_token,
+        title="Catalog cache published",
+        max_score=5,
+        max_attempts=1,
+        published=True,
+    )
+    await _create_mcq_question(
+        client,
+        teacher_token,
+        test_id=created_test["id"],
+        text="Catalog cache question",
+        points=1.0,
+    )
+
+    counters = {"list_tests": 0, "state_map": 0, "level_context": 0}
+    original_list_tests = tests_router.test_repo.list_tests
+    original_state_map = tests_router.test_repo.get_user_test_state_map
+    original_level_context = tests_router.get_user_level_context
+
+    async def counted_list_tests(*args, **kwargs):
+        counters["list_tests"] += 1
+        return await original_list_tests(*args, **kwargs)
+
+    async def counted_state_map(*args, **kwargs):
+        counters["state_map"] += 1
+        return await original_state_map(*args, **kwargs)
+
+    async def counted_level_context(*args, **kwargs):
+        counters["level_context"] += 1
+        return await original_level_context(*args, **kwargs)
+
+    monkeypatch.setattr(tests_router.test_repo, "list_tests", counted_list_tests, raising=True)
+    monkeypatch.setattr(tests_router.test_repo, "get_user_test_state_map", counted_state_map, raising=True)
+    monkeypatch.setattr(tests_router, "get_user_level_context", counted_level_context, raising=True)
+
+    first = await client.get("/api/v1/tests/catalog/me", headers=auth_headers(student_token))
+    assert first.status_code == 200, first.text
+    second = await client.get("/api/v1/tests/catalog/me", headers=auth_headers(student_token))
+    assert second.status_code == 200, second.text
+    assert second.json() == first.json()
+
+    assert counters["list_tests"] == 1
+    assert counters["state_map"] == 1
+    assert counters["level_context"] == 1
