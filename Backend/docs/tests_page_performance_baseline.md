@@ -1,6 +1,6 @@
 # Tests Page Performance Baseline
 
-Date (UTC): 2026-05-01  
+Date (UTC): 2026-05-01
 Scope: baseline for `/tests` page load chain before optimization parties.
 
 ## Current Request Pattern (as-is)
@@ -36,16 +36,17 @@ docker compose exec -w /app backend python scripts/measure_tests_page_baseline.p
 What script does:
 
 - creates a dedicated temporary user and logs in;
-- performs two sequential “page-open” simulations;
+- performs two sequential "page-open" simulations;
 - measures per-request `ttfb_ms` and `total_ms`;
 - aggregates timings for list/content/answers segments;
 - prints StrictMode x2 projection for dev UX.
 
-Snapshot with raw numbers:
+Snapshots with raw numbers:
 
 - `Backend/docs/tests_page_performance_baseline_2026-05-01.json`
+- `Backend/docs/tests_page_performance_baseline_2026-05-02.json`
 
-## Baseline Snapshot (measured)
+## Baseline Snapshot (measured on 2026-05-01)
 
 Environment:
 
@@ -73,6 +74,34 @@ Dev StrictMode projection from script:
 
 - first open x2: `1946.16 ms`
 - second open x2: `855.82 ms`
+
+## Regression Snapshot (measured on 2026-05-02)
+
+Environment:
+
+- API host: `127.0.0.1:8000` (inside backend container)
+- Thread workers for parallel segment emulation: `8`
+- Visible tests for baseline user: `N=2`
+
+Run 1 (`run_1_first_open`):
+
+- requests: `5` (`1 + 2 + 2`)
+- total page load: `432.18 ms`
+
+Run 2 (`run_2_second_open`):
+
+- requests: `5` (`1 + 2 + 2`)
+- total page load: `275.05 ms`
+
+Dev StrictMode projection from script:
+
+- first open x2: `864.36 ms`
+- second open x2: `550.10 ms`
+
+SLA check against targets:
+
+- first open dev `<= 1500 ms`: pass (`864.36 ms`)
+- repeat open dev `<= 600 ms`: pass (`550.10 ms`)
 
 ## Interpretation
 

@@ -17,6 +17,7 @@ from app.models.test_ import Test
 from app.models.test_attempt import TestAttempt
 from app.models.user import User
 from app.models.user_achievement import UserAchievement
+from app.cache.redis_cache import NS_LEADERBOARD, NS_TEST_SUMMARY, bump_cache_namespace
 from app.repositories import level_repo
 from app.services import reward_service
 
@@ -248,6 +249,11 @@ async def apply_points_transaction(
     await _award_achievements_if_eligible(session, user_id=user_id, analytics=analytics, source_event=reason_code)
     await reward_service.sync_user_rewards(session, user_id)
     await session.flush()
+    try:
+        await bump_cache_namespace(NS_LEADERBOARD, NS_TEST_SUMMARY)
+    except Exception:
+        # Cache invalidation failures must not break transactional updates.
+        pass
     return analytics
 
 

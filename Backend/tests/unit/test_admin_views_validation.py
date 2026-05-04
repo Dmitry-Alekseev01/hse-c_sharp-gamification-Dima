@@ -4,9 +4,11 @@ import pytest
 from starlette_admin.exceptions import FormValidationError
 
 from app.admin.views import (
+    AchievementDefinitionAdminView,
     ChallengeAdminView,
     ChoiceAdminView,
     GroupMembershipAdminView,
+    MaterialAdminView,
     MaterialAttachmentAdminView,
     MaterialBlockAdminView,
     QuestionAdminView,
@@ -15,23 +17,27 @@ from app.admin.views import (
     TestAdminView as _TestAdminView,
     UnlockRuleAdminView,
 )
+from app.core.security import get_password_hash
 from app.core.material_taxonomy import (
     AttachmentKind,
     MATERIAL_ATTACHMENT_KIND_VALUES,
     MATERIAL_BLOCK_TYPE_VALUES,
     MaterialBlockType,
 )
+from app.models.achievement_definition import AchievementDefinition
 from app.models.challenge import Challenge
 from app.models.choice import Choice
 from app.models.group import GroupMembership
 from app.models.material_attachment import MaterialAttachment
 from app.models.material_block import MaterialBlock
 from app.models.material import Material
+from app.models.level import Level
 from app.models.question import Question
 from app.models.reward_definition import RewardDefinition
 from app.models.season import Season
 from app.models.test_ import Test
 from app.models.unlock_rule import UnlockRule
+from app.models.user import User
 
 pytestmark = pytest.mark.asyncio
 
@@ -81,6 +87,23 @@ async def test_reward_definition_admin_view_validate_rejects_missing_code():
         await view.validate(None, {"title": "Badge", "reward_type": "badge"})
 
 
+async def test_achievement_definition_admin_view_validate_rejects_invalid_criteria_type():
+    view = AchievementDefinitionAdminView(AchievementDefinition)
+
+    with pytest.raises(FormValidationError):
+        await view.validate(
+            None,
+            {
+                "code": "ach_invalid",
+                "title": "Achievement",
+                "description": "Desc",
+                "criteria_type": "invalid",
+                "threshold_value": 1,
+                "is_active": True,
+            },
+        )
+
+
 async def test_unlock_rule_admin_view_validate_rejects_invalid_source_type():
     view = UnlockRuleAdminView(UnlockRule)
 
@@ -100,6 +123,23 @@ async def test_unlock_rule_admin_view_validate_accepts_relation_payload():
     )
 
 
+async def test_unlock_rule_admin_view_validate_rejects_non_existing_reward_definition(db):
+    request = _DummyAdminRequest(db=db, user_id=1)
+    view = UnlockRuleAdminView(UnlockRule)
+
+    with pytest.raises(FormValidationError):
+        await view.validate(
+            request,
+            {
+                "reward_definition": {"id": 999999},
+                "source_type": "level",
+                "source_code": "lvl_1",
+                "min_level_required": 1,
+                "is_active": True,
+            },
+        )
+
+
 async def test_challenge_admin_view_validate_rejects_invalid_event_type():
     view = ChallengeAdminView(Challenge)
 
@@ -117,6 +157,25 @@ async def test_challenge_admin_view_validate_rejects_invalid_event_type():
         )
 
 
+async def test_challenge_admin_view_validate_rejects_non_existing_created_by(db):
+    request = _DummyAdminRequest(db=db, user_id=1)
+    view = ChallengeAdminView(Challenge)
+
+    with pytest.raises(FormValidationError):
+        await view.validate(
+            request,
+            {
+                "code": "c_with_missing_creator",
+                "title": "Challenge",
+                "period_type": "daily",
+                "event_type": "answer_submitted",
+                "target_value": 1,
+                "reward_points": 1.0,
+                "created_by": 999999,
+            },
+        )
+
+
 async def test_season_admin_view_validate_rejects_invalid_dates():
     view = SeasonAdminView(Season)
 
@@ -128,6 +187,23 @@ async def test_season_admin_view_validate_rejects_invalid_dates():
                 "title": "Season 1",
                 "starts_at": "not-a-date",
                 "ends_at": "also-not-a-date",
+            },
+        )
+
+
+async def test_season_admin_view_validate_rejects_non_existing_created_by(db):
+    request = _DummyAdminRequest(db=db, user_id=1)
+    view = SeasonAdminView(Season)
+
+    with pytest.raises(FormValidationError):
+        await view.validate(
+            request,
+            {
+                "code": "s1",
+                "title": "Season 1",
+                "starts_at": "2026-01-01T10:00:00",
+                "ends_at": "2026-01-02T10:00:00",
+                "created_by": 999999,
             },
         )
 
@@ -250,6 +326,90 @@ class _DummyTeacherRequest:
         self.state = SimpleNamespace(
             admin_user=SimpleNamespace(id=teacher_id, username=f"teacher{teacher_id}@example.com"),
             session=db,
+        )
+
+
+class _DummyAdminRequest:
+    def __init__(self, *, db, user_id: int = 1):
+        self.session = {
+            "admin_role": "admin",
+            "admin_user_id": user_id,
+            "admin_username": f"admin{user_id}@example.com",
+        }
+        self.state = SimpleNamespace(
+            admin_user=SimpleNamespace(id=user_id, username=f"admin{user_id}@example.com"),
+            session=db,
+        )
+
+
+async def test_material_admin_view_validate_accepts_existing_required_level_relation(db):
+    level = Level(name="Level A", required_points=10)
+    db.add(level)
+    await db.flush()
+
+    request = _DummyAdminRequest(db=db, user_id=1)
+    view = MaterialAdminView(Material)
+    author = User(
+        username="author_material_admin@example.com",
+        full_name="Author Material Admin",
+        password_hash=get_password_hash("secret123"),
+        role="teacher",
+    )
+    db.add(author)
+    await db.flush()
+    await view.validate(
+        request,
+        {
+            "title": "Material with level gate",
+            "material_type": "lesson",
+            "status": "draft",
+            "required_level": {"id": level.id},
+            "author_id": author.id,
+        },
+    )
+
+
+async def test_material_admin_view_validate_rejects_non_existing_author(db):
+    request = _DummyAdminRequest(db=db, user_id=1)
+    view = MaterialAdminView(Material)
+
+    with pytest.raises(FormValidationError):
+        await view.validate(
+            request,
+            {
+                "title": "Material with missing author",
+                "material_type": "lesson",
+                "status": "draft",
+                "author_id": 999999,
+            },
+        )
+
+
+async def test_test_admin_view_validate_rejects_non_existing_required_level(db):
+    request = _DummyAdminRequest(db=db, user_id=1)
+    view = _TestAdminView(Test)
+
+    with pytest.raises(FormValidationError):
+        await view.validate(
+            request,
+            {
+                "title": "Test with broken level ref",
+                "required_level": {"id": 999999},
+            },
+        )
+
+
+async def test_test_admin_view_validate_rejects_non_existing_material_link(db):
+    request = _DummyAdminRequest(db=db, user_id=1)
+    view = _TestAdminView(Test)
+
+    with pytest.raises(FormValidationError):
+        await view.validate(
+            request,
+            {
+                "title": "Test with missing material",
+                "materials": [{"id": 999999}],
+            },
         )
 
 

@@ -1,6 +1,14 @@
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.cache.redis_cache import (
+    NS_TEST_SUMMARY,
+    USER_LEVEL_CONTEXT_TTL,
+    cache_key_user_level_context,
+    get as cache_get,
+    get_cache_namespace_version,
+    set as cache_set,
+)
 from app.models.material import Material
 from app.models.test_ import Test
 from app.models.user import User
@@ -80,9 +88,30 @@ async def get_visible_material(
 async def get_user_level_context(db: AsyncSession, current_user: User) -> tuple[float, int]:
     if current_user.role in {"teacher", "admin"}:
         return 0.0, -1
+
+    cache_key = None
+    try:
+        summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+        cache_key = cache_key_user_level_context(user_id=current_user.id, summary_version=summary_version)
+        cached = await cache_get(cache_key)
+        if isinstance(cached, dict):
+            return float(cached.get("total_points") or 0.0), int(cached.get("level_id") or 0)
+    except Exception:
+        cache_key = None
+
     analytics = await analytics_repo.get_user_analytics(db, current_user.id)
     total_points = float(analytics.total_points or 0.0) if analytics is not None else 0.0
     level_id = int(analytics.current_level_id or 0) if analytics is not None else 0
+
+    if cache_key is not None:
+        try:
+            await cache_set(
+                cache_key,
+                {"total_points": total_points, "level_id": level_id},
+                ttl=USER_LEVEL_CONTEXT_TTL,
+            )
+        except Exception:
+            pass
     return total_points, level_id
 
 

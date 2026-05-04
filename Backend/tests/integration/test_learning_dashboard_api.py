@@ -235,3 +235,86 @@ async def test_learning_dashboard_aggregates_home_personal_analytics_data(client
     assert in_progress_test["id"] in teacher_test_ids
     assert locked_test["id"] in teacher_test_ids
     assert teacher_payload["total_materials"] == 2
+
+
+async def test_learning_dashboard_is_cached_between_repeated_requests(client, db, monkeypatch):
+    from app.api.v1.routers import analytics as analytics_router
+
+    teacher = await seed_user(db, username="dash_cache_teacher@example.com", password="teach123", role="teacher")
+    student = await seed_user(db, username="dash_cache_student@example.com", password="stud123", role="user")
+
+    teacher_token = await login(client, teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+
+    test_payload = await _create_test(
+        client,
+        teacher_token,
+        title="Dashboard cache test",
+        max_score=5,
+        max_attempts=2,
+    )
+    question_payload = await _create_mcq_question(
+        client,
+        teacher_token,
+        test_id=test_payload["id"],
+        text="Dashboard cache question",
+        points=5.0,
+    )
+    attempt = await _start_attempt(client, student_token, test_payload["id"])
+    await _submit_answer(
+        client,
+        student_token,
+        test_id=test_payload["id"],
+        question_id=question_payload["id"],
+        answer_payload=str(question_payload["choices"][0]["id"]),
+        attempt_id=attempt["id"],
+    )
+    await _complete_attempt(client, student_token, attempt["id"])
+
+    counters = {
+        "progress": 0,
+        "materials": 0,
+        "tests": 0,
+        "state_map": 0,
+    }
+    original_progress = analytics_router.analytics_repo.get_gamification_progress
+    original_count_materials = analytics_router.material_repo.count_visible_materials_for_user
+    original_list_tests = analytics_router.test_repo.list_tests
+    original_state_map = analytics_router.test_repo.get_user_test_state_map
+
+    async def counted_progress(*args, **kwargs):
+        counters["progress"] += 1
+        return await original_progress(*args, **kwargs)
+
+    async def counted_count_materials(*args, **kwargs):
+        counters["materials"] += 1
+        return await original_count_materials(*args, **kwargs)
+
+    async def counted_list_tests(*args, **kwargs):
+        counters["tests"] += 1
+        return await original_list_tests(*args, **kwargs)
+
+    async def counted_state_map(*args, **kwargs):
+        counters["state_map"] += 1
+        return await original_state_map(*args, **kwargs)
+
+    monkeypatch.setattr(analytics_router.analytics_repo, "get_gamification_progress", counted_progress, raising=True)
+    monkeypatch.setattr(
+        analytics_router.material_repo,
+        "count_visible_materials_for_user",
+        counted_count_materials,
+        raising=True,
+    )
+    monkeypatch.setattr(analytics_router.test_repo, "list_tests", counted_list_tests, raising=True)
+    monkeypatch.setattr(analytics_router.test_repo, "get_user_test_state_map", counted_state_map, raising=True)
+
+    first_response = await client.get("/api/v1/analytics/me/learning-dashboard", headers=auth_headers(student_token))
+    assert first_response.status_code == 200, first_response.text
+    second_response = await client.get("/api/v1/analytics/me/learning-dashboard", headers=auth_headers(student_token))
+    assert second_response.status_code == 200, second_response.text
+    assert second_response.json() == first_response.json()
+
+    assert counters["progress"] == 1
+    assert counters["materials"] == 1
+    assert counters["tests"] == 1
+    assert counters["state_map"] == 1

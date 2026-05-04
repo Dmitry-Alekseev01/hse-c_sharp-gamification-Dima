@@ -1,5 +1,6 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.access import can_manage_test, get_manageable_test, get_visible_test
@@ -80,7 +81,7 @@ async def create_answer(
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except AttemptPolicyError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(exc)})
     try:
         ans = await submit_answer(
             db,
@@ -129,9 +130,7 @@ async def get_answers_for_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    test = await get_visible_test(db, test_id, current_user)
     scoped_user_id: int | None = None
-    can_use_cache = False
     cache_key = None
     if current_user.role not in {"teacher", "admin"}:
         if user_id is not None and user_id != current_user.id:
@@ -148,11 +147,13 @@ async def get_answers_for_test(
         cached = await get(cache_key)
         if cached is not None:
             return cached
-        can_use_cache = True
-    elif current_user.role == "teacher" and not can_manage_test(current_user, test):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        await get_visible_test(db, test_id, current_user)
     else:
+        test = await get_visible_test(db, test_id, current_user)
+        if current_user.role == "teacher" and not can_manage_test(current_user, test):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         scoped_user_id = user_id
+
     answers = await answer_repo.get_answers_for_test(
         db,
         test_id=test_id,
@@ -160,7 +161,7 @@ async def get_answers_for_test(
         offset=offset,
         user_id=scoped_user_id,
     )
-    if can_use_cache and cache_key is not None:
+    if cache_key is not None:
         payload = [AnswerRead.model_validate(item).model_dump(mode="json") for item in answers]
         await set(cache_key, payload, ttl=ANSWERS_BY_TEST_TTL)
     return answers

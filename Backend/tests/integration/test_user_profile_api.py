@@ -150,7 +150,7 @@ async def test_user_can_change_password_and_login_with_new_one(client, db):
         headers=auth_headers(token),
         json={
             "current_password": "user12345",
-            "new_password": "user67890",
+            "new_password": "User67890!",
         },
     )
     assert change_response.status_code == 200, change_response.text
@@ -165,7 +165,7 @@ async def test_user_can_change_password_and_login_with_new_one(client, db):
     )
     assert old_login_response.status_code == 401, old_login_response.text
 
-    new_token = await login(client, user.username, "user67890")
+    new_token = await login(client, user.username, "User67890!")
     me_response = await client.get("/api/v1/auth/me", headers=auth_headers(new_token))
     assert me_response.status_code == 200, me_response.text
     assert me_response.json()["username"] == user.username
@@ -186,7 +186,7 @@ async def test_user_change_password_rejects_wrong_current_password(client, db):
         headers=auth_headers(token),
         json={
             "current_password": "wrong_password",
-            "new_password": "user67890",
+            "new_password": "User67890!",
         },
     )
     assert response.status_code == 400, response.text
@@ -223,14 +223,14 @@ async def test_admin_can_reset_user_password_and_old_token_becomes_invalid(clien
     forbidden_reset = await client.patch(
         f"/api/v1/users/{target.id}/password",
         headers=auth_headers(non_admin_token),
-        json={"new_password": "reset67890"},
+        json={"new_password": "Reset67890!"},
     )
     assert forbidden_reset.status_code == 403, forbidden_reset.text
 
     reset_response = await client.patch(
         f"/api/v1/users/{target.id}/password",
         headers=auth_headers(admin_token),
-        json={"new_password": "reset67890"},
+        json={"new_password": "Reset67890!"},
     )
     assert reset_response.status_code == 200, reset_response.text
     assert reset_response.json()["detail"] == "Password updated successfully"
@@ -244,10 +244,58 @@ async def test_admin_can_reset_user_password_and_old_token_becomes_invalid(clien
     )
     assert old_login.status_code == 401, old_login.text
 
-    new_token = await login(client, target.username, "reset67890")
+    new_token = await login(client, target.username, "Reset67890!")
     new_me = await client.get("/api/v1/auth/me", headers=auth_headers(new_token))
     assert new_me.status_code == 200, new_me.text
     assert new_me.json()["username"] == target.username
+
+
+async def test_user_change_password_rejects_weak_password_by_policy(client, db):
+    user = await seed_user(
+        db,
+        username="password_change_policy_api@example.com",
+        password="user12345",
+        role="user",
+        full_name="Password Policy API User",
+    )
+    token = await login(client, user.username, "user12345")
+
+    response = await client.patch(
+        "/api/v1/users/me/password",
+        headers=auth_headers(token),
+        json={
+            "current_password": "user12345",
+            "new_password": "weakpass123",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert "uppercase" in response.json()["detail"]
+
+
+async def test_admin_reset_password_rejects_weak_password_by_policy(client, db):
+    admin = await seed_user(
+        db,
+        username="password_policy_admin_reset@example.com",
+        password="admin12345",
+        role="admin",
+        full_name="Password Policy Admin",
+    )
+    target = await seed_user(
+        db,
+        username="password_policy_target@example.com",
+        password="user12345",
+        role="user",
+        full_name="Password Policy Target",
+    )
+
+    admin_token = await login(client, admin.username, "admin12345")
+    response = await client.patch(
+        f"/api/v1/users/{target.id}/password",
+        headers=auth_headers(admin_token),
+        json={"new_password": "weakpass123"},
+    )
+    assert response.status_code == 400, response.text
+    assert "uppercase" in response.json()["detail"]
 
 
 async def test_admin_can_delete_user_non_admin_cannot(client, db):

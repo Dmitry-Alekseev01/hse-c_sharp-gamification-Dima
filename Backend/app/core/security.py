@@ -14,6 +14,7 @@ from app.models.user import User  # type: ignore
 from app.repositories.user_repo import get_user_by_username  # existing repo
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db
+from app.cache.redis_cache import delete as cache_delete, get as cache_get, set as cache_set
 
 # build CryptContext using settings.hash_schemes
 _hash_schemes = [s.strip() for s in settings.hash_schemes.split(",") if s.strip()]
@@ -23,6 +24,61 @@ if not _hash_schemes:
 pwd_context = CryptContext(schemes=_hash_schemes, deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=settings.oauth2_token_url)
+AUTH_USER_CACHE_TTL_SECONDS = 60
+
+
+def _auth_user_cache_key(username: str) -> str:
+    return f"auth:user:{username}"
+
+
+async def invalidate_auth_user_cache(*usernames: str) -> None:
+    keys = [_auth_user_cache_key(username) for username in usernames if username]
+    if not keys:
+        return
+    try:
+        await cache_delete(*keys)
+    except Exception:
+        # Cache must not break auth mutations.
+        pass
+
+
+def _build_user_principal(payload: dict) -> User:
+    return User(
+        id=int(payload["id"]),
+        username=str(payload["username"]),
+        role=str(payload["role"]),
+        full_name=payload.get("full_name"),
+        password_hash=str(payload.get("password_hash") or ""),
+    )
+
+
+async def _get_cached_auth_payload(username: str) -> dict | None:
+    try:
+        cached = await cache_get(_auth_user_cache_key(username))
+    except Exception:
+        return None
+    return cached if isinstance(cached, dict) else None
+
+
+async def _set_cached_auth_payload(
+    *,
+    username: str,
+    user: User,
+    pwdv: str,
+) -> None:
+    payload = {
+        "id": int(user.id),
+        "username": user.username,
+        "role": user.role,
+        "full_name": user.full_name,
+        "password_hash": user.password_hash,
+        "pwdv": pwdv,
+    }
+    try:
+        await cache_set(_auth_user_cache_key(username), payload, ttl=AUTH_USER_CACHE_TTL_SECONDS)
+    except Exception:
+        # Cache write failure should not break auth path.
+        pass
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -74,15 +130,22 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     except JWTError:
         raise credentials_exception
 
-    user = await get_user_by_username(db, username)
-    if user is None:
-        raise credentials_exception
-
     token_pwdv = payload.get("pwdv")
     if not isinstance(token_pwdv, str):
+        raise credentials_exception
+
+    cached_payload = await _get_cached_auth_payload(username)
+    if cached_payload is not None:
+        cached_pwdv = cached_payload.get("pwdv")
+        if isinstance(cached_pwdv, str) and hmac.compare_digest(token_pwdv, cached_pwdv):
+            return _build_user_principal(cached_payload)
+
+    user = await get_user_by_username(db, username)
+    if user is None:
         raise credentials_exception
     current_pwdv = build_password_version(user.password_hash)
     if not hmac.compare_digest(token_pwdv, current_pwdv):
         raise credentials_exception
 
+    await _set_cached_auth_payload(username=username, user=user, pwdv=current_pwdv)
     return user

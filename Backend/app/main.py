@@ -26,6 +26,7 @@ from app.core.config import settings
 from app.db.session import Base, engine
 from app.health.endpoints import router as health_router
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.request_metrics import RequestMetricsMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RateLimitMiddleware)
+    if settings.monitoring_enabled:
+        app.add_middleware(RequestMetricsMiddleware)
 
     app.include_router(health_router, prefix="/health", tags=["health"])
     app.include_router(users.router, prefix="/api/v1/users", tags=["users"])

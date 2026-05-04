@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.security import build_password_version, create_access_token, get_current_user
 from app.models.user import User
 from app.repositories import auth_repo
+from app.services import user_service
 from app.schemas.auth import LoginRequest, TokenRead
 from app.schemas.user import UserRead, UserCreate
 
@@ -56,10 +57,16 @@ async def login_with_json(payload: LoginRequest, response: Response, db: AsyncSe
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def register_user(payload: UserCreate, response: Response, db: AsyncSession = Depends(get_db)):
-    from app.repositories.user_repo import get_user_by_username
-    if await get_user_by_username(db, payload.username):
-        raise HTTPException(status_code=400, detail="Username already taken")
-    user = await auth_repo.create_user(db, payload.username, payload.password, payload.full_name)
+    try:
+        user = await user_service.register_user(
+            db,
+            payload.username,
+            payload.password,
+            payload.full_name,
+            role="user",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     _clear_admin_session_cookie(response)
     return user
 

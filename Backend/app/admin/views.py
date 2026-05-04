@@ -10,6 +10,7 @@ from starlette_admin.contrib.sqla import ModelView
 from starlette_admin.exceptions import FormValidationError
 
 from app.models.ai_gamification_job import AIGamificationJob
+from app.models.achievement_definition import AchievementDefinition
 from app.models.analytics import Analytics
 from app.models.answer import Answer
 from app.models.challenge import Challenge, UserChallengeClaim, UserChallengeProgress
@@ -313,6 +314,22 @@ class AdminAuditedModelView(ModelView):
         elif not strict_gt and numeric_value < minimum:
             errors.setdefault(field, []).append(f"Must be >= {minimum}")
 
+    async def _validate_existing_fk(
+        self,
+        request: Request | None,
+        *,
+        model: Any,
+        model_id: int | None,
+        errors: dict[str, list[str]],
+        field: str,
+        message: str = "Must reference an existing record",
+    ) -> None:
+        if request is None or model_id is None:
+            return
+        stmt = select(model.id).where(model.id == model_id)
+        if await self._scalar_one_or_none(request, stmt) is None:
+            errors.setdefault(field, []).append(message)
+
 
 class TeacherAccessibleModelView(AdminAuditedModelView):
     def _teacher_id(self, request: Request) -> int:
@@ -428,13 +445,12 @@ class MaterialAdminView(TeacherOwnedByFieldModelView):
         "description",
         "published_at",
         "author_id",
-        "required_level_id",
+        "required_level",
     ]
     searchable_fields = ["title", "description"]
     sortable_fields = ["id", "title", "material_type", "status", "published_at", "author_id", "required_level_id"]
 
     async def validate(self, request: Request, data: dict[str, Any]) -> None:
-        del request
         errors: dict[str, list[str]] = {}
         self._validate_required_str(data, "title", errors, max_len=300)
         material_type = data.get("material_type")
@@ -443,6 +459,42 @@ class MaterialAdminView(TeacherOwnedByFieldModelView):
         status = data.get("status")
         if status not in {"draft", "published", "archived"}:
             errors.setdefault("status", []).append("Must be one of: draft, published, archived")
+        required_level_id, required_level_id_error = self._extract_foreign_id(
+            data,
+            id_field="required_level_id",
+            relation_field="required_level",
+        )
+        if required_level_id_error is not None:
+            errors.setdefault("required_level", []).append(required_level_id_error)
+        elif required_level_id is not None and required_level_id < 1:
+            errors.setdefault("required_level", []).append("Must reference ids >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=Level,
+                model_id=required_level_id,
+                errors=errors,
+                field="required_level",
+                message="Must reference an existing level",
+            )
+        raw_author_id = data.get("author_id")
+        if raw_author_id not in (None, ""):
+            author_id = self._to_int_or_none(raw_author_id)
+            if author_id is None:
+                errors.setdefault("author_id", []).append("Must be an integer")
+            elif author_id < 1:
+                errors.setdefault("author_id", []).append("Must be >= 1")
+            else:
+                await self._validate_existing_fk(
+                    request,
+                    model=User,
+                    model_id=author_id,
+                    errors=errors,
+                    field="author_id",
+                    message="Must reference an existing author",
+                )
+                if request is not None and self._is_teacher(request) and author_id != self._teacher_id(request):
+                    errors.setdefault("author_id", []).append("Teacher can set only own author id")
         if errors:
             raise FormValidationError(errors)
 
@@ -463,7 +515,7 @@ class TestAdminView(TeacherOwnedByFieldModelView):
         "materials",
         "deadline",
         "author_id",
-        "required_level_id",
+        "required_level",
     ]
     searchable_fields = ["title", "description"]
     sortable_fields = [
@@ -485,6 +537,43 @@ class TestAdminView(TeacherOwnedByFieldModelView):
         self._validate_optional_int_min(data, "time_limit_minutes", errors, minimum=1)
         self._validate_optional_float_min(data, "max_score", errors, minimum=0.0)
         self._validate_optional_int_min(data, "max_attempts", errors, minimum=1)
+        required_level_id, required_level_id_error = self._extract_foreign_id(
+            data,
+            id_field="required_level_id",
+            relation_field="required_level",
+        )
+        if required_level_id_error is not None:
+            errors.setdefault("required_level", []).append(required_level_id_error)
+        elif required_level_id is not None and required_level_id < 1:
+            errors.setdefault("required_level", []).append("Must reference ids >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=Level,
+                model_id=required_level_id,
+                errors=errors,
+                field="required_level",
+                message="Must reference an existing level",
+            )
+        raw_author_id = data.get("author_id")
+        if raw_author_id not in (None, ""):
+            author_id = self._to_int_or_none(raw_author_id)
+            if author_id is None:
+                errors.setdefault("author_id", []).append("Must be an integer")
+            elif author_id < 1:
+                errors.setdefault("author_id", []).append("Must be >= 1")
+            else:
+                await self._validate_existing_fk(
+                    request,
+                    model=User,
+                    model_id=author_id,
+                    errors=errors,
+                    field="author_id",
+                    message="Must reference an existing author",
+                )
+                if request is not None and self._is_teacher(request) and author_id != self._teacher_id(request):
+                    errors.setdefault("author_id", []).append("Teacher can set only own author id")
+
         material_ids, material_ids_error = self._extract_foreign_ids(
             data,
             id_field="material_ids",
@@ -494,6 +583,16 @@ class TestAdminView(TeacherOwnedByFieldModelView):
             errors.setdefault("materials", []).append(material_ids_error)
         elif any(material_id < 1 for material_id in material_ids):
             errors.setdefault("materials", []).append("Must reference ids >= 1")
+        elif request is not None and material_ids:
+            existing_material_ids = set(
+                await self._scalars_all(
+                    request,
+                    select(Material.id).where(Material.id.in_(material_ids)),
+                )
+            )
+            missing_material_ids = set(material_ids) - existing_material_ids
+            if missing_material_ids:
+                errors.setdefault("materials", []).append("Must reference existing materials")
 
         if request is not None and self._is_teacher(request) and material_ids:
             teacher_id = self._teacher_id(request)
@@ -542,6 +641,15 @@ class QuestionAdminView(TeacherAccessibleModelView):
             errors.setdefault("test_id", []).append("Field is required")
         elif test_id < 1:
             errors.setdefault("test_id", []).append("Must be >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=Test,
+                model_id=test_id,
+                errors=errors,
+                field="test_id",
+                message="Must reference an existing test",
+            )
         self._validate_required_str(data, "text", errors)
         self._validate_optional_float_min(data, "points", errors, minimum=0.0, strict_gt=True)
         if request is not None and self._is_teacher(request) and test_id is not None:
@@ -596,6 +704,15 @@ class ChoiceAdminView(TeacherAccessibleModelView):
             errors.setdefault("question_id", []).append("Field is required")
         elif question_id < 1:
             errors.setdefault("question_id", []).append("Must be >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=Question,
+                model_id=question_id,
+                errors=errors,
+                field="question_id",
+                message="Must reference an existing question",
+            )
         self._validate_required_str(data, "value", errors, max_len=1000)
         self._validate_optional_int_min(data, "ordinal", errors, minimum=0)
         if request is not None and self._is_teacher(request) and question_id is not None:
@@ -646,6 +763,15 @@ class MaterialBlockAdminView(TeacherAccessibleModelView):
             errors.setdefault("material_id", []).append("Field is required")
         elif material_id < 1:
             errors.setdefault("material_id", []).append("Must be >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=Material,
+                model_id=material_id,
+                errors=errors,
+                field="material_id",
+                message="Must reference an existing material",
+            )
         block_type = data.get("block_type")
         if block_type not in MATERIAL_BLOCK_TYPE_VALUES_SET:
             errors.setdefault("block_type", []).append(
@@ -702,6 +828,15 @@ class MaterialAttachmentAdminView(TeacherAccessibleModelView):
             errors.setdefault("material_id", []).append("Field is required")
         elif material_id < 1:
             errors.setdefault("material_id", []).append("Must be >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=Material,
+                model_id=material_id,
+                errors=errors,
+                field="material_id",
+                message="Must reference an existing material",
+            )
         self._validate_required_str(data, "title", errors, max_len=300)
         self._validate_required_str(data, "file_url", errors, max_len=1000)
         file_kind = data.get("file_kind")
@@ -781,6 +916,15 @@ class GroupMembershipAdminView(TeacherAccessibleModelView):
             errors.setdefault("group_id", []).append("Field is required")
         elif group_id < 1:
             errors.setdefault("group_id", []).append("Must be >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=StudyGroup,
+                model_id=group_id,
+                errors=errors,
+                field="group_id",
+                message="Must reference an existing group",
+            )
 
         user_id, user_id_error = self._extract_foreign_id(data, id_field="user_id", relation_field="user")
         if user_id_error is not None:
@@ -789,6 +933,15 @@ class GroupMembershipAdminView(TeacherAccessibleModelView):
             errors.setdefault("user_id", []).append("Field is required")
         elif user_id < 1:
             errors.setdefault("user_id", []).append("Must be >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=User,
+                model_id=user_id,
+                errors=errors,
+                field="user_id",
+                message="Must reference an existing user",
+            )
 
         if request is not None and self._is_teacher(request) and group_id is not None:
             teacher_id = self._teacher_id(request)
@@ -893,6 +1046,40 @@ class RewardDefinitionAdminView(AdminAuditedModelView):
             raise FormValidationError(errors)
 
 
+class AchievementDefinitionAdminView(AdminAuditedModelView):
+    name = "Achievement Definitions"
+    icon = "fa fa-star"
+    fields = [
+        "id",
+        "code",
+        "title",
+        "description",
+        "reward",
+        "criteria_type",
+        "threshold_value",
+        "is_active",
+        "created_at",
+        "updated_at",
+    ]
+    searchable_fields = ["code", "title", "criteria_type"]
+    sortable_fields = ["id", "code", "title", "criteria_type", "threshold_value", "is_active", "created_at"]
+
+    async def validate(self, request: Request, data: dict[str, Any]) -> None:
+        del request
+        errors: dict[str, list[str]] = {}
+        self._validate_required_str(data, "code", errors, max_len=100)
+        self._validate_required_str(data, "title", errors, max_len=200)
+        self._validate_required_str(data, "description", errors)
+        criteria_type = data.get("criteria_type")
+        if criteria_type not in {"total_points", "streak_days", "completed_attempts"}:
+            errors.setdefault("criteria_type", []).append(
+                "Must be one of: total_points, streak_days, completed_attempts"
+            )
+        self._validate_required_int_min(data, "threshold_value", errors, minimum=1)
+        if errors:
+            raise FormValidationError(errors)
+
+
 class UnlockRuleAdminView(AdminAuditedModelView):
     name = "Unlock Rules"
     icon = "fa fa-unlock"
@@ -901,7 +1088,6 @@ class UnlockRuleAdminView(AdminAuditedModelView):
     fields_default_sort = ["reward_definition_id asc", "id asc"]
 
     async def validate(self, request: Request, data: dict[str, Any]) -> None:
-        del request
         errors: dict[str, list[str]] = {}
         reward_definition_id, reward_definition_id_error = self._extract_foreign_id(
             data,
@@ -914,6 +1100,15 @@ class UnlockRuleAdminView(AdminAuditedModelView):
             errors.setdefault("reward_definition_id", []).append("Field is required")
         elif reward_definition_id < 1:
             errors.setdefault("reward_definition_id", []).append("Must be >= 1")
+        else:
+            await self._validate_existing_fk(
+                request,
+                model=RewardDefinition,
+                model_id=reward_definition_id,
+                errors=errors,
+                field="reward_definition_id",
+                message="Must reference an existing reward definition",
+            )
         source_type = data.get("source_type")
         if source_type not in {"achievement", "challenge", "level"}:
             errors.setdefault("source_type", []).append("Must be one of: achievement, challenge, level")
@@ -945,7 +1140,6 @@ class ChallengeAdminView(AdminAuditedModelView):
     sortable_fields = ["id", "code", "event_type", "period_type", "target_value", "reward_points", "is_active", "created_at"]
 
     async def validate(self, request: Request, data: dict[str, Any]) -> None:
-        del request
         errors: dict[str, list[str]] = {}
         self._validate_required_str(data, "code", errors, max_len=100)
         self._validate_required_str(data, "title", errors, max_len=200)
@@ -959,6 +1153,22 @@ class ChallengeAdminView(AdminAuditedModelView):
             )
         self._validate_required_int_min(data, "target_value", errors, minimum=1)
         self._validate_optional_float_min(data, "reward_points", errors, minimum=0.0)
+        raw_created_by = data.get("created_by")
+        if raw_created_by not in (None, ""):
+            created_by = self._to_int_or_none(raw_created_by)
+            if created_by is None:
+                errors.setdefault("created_by", []).append("Must be an integer")
+            elif created_by < 1:
+                errors.setdefault("created_by", []).append("Must be >= 1")
+            else:
+                await self._validate_existing_fk(
+                    request,
+                    model=User,
+                    model_id=created_by,
+                    errors=errors,
+                    field="created_by",
+                    message="Must reference an existing user",
+                )
         starts_at = self._to_datetime_or_none(data.get("starts_at"))
         ends_at = self._to_datetime_or_none(data.get("ends_at"))
         if starts_at is not None and ends_at is not None and starts_at > ends_at:
@@ -1018,7 +1228,6 @@ class SeasonAdminView(AdminAuditedModelView):
     sortable_fields = ["id", "code", "starts_at", "ends_at", "is_active", "created_at"]
 
     async def validate(self, request: Request, data: dict[str, Any]) -> None:
-        del request
         errors: dict[str, list[str]] = {}
         self._validate_required_str(data, "code", errors, max_len=100)
         self._validate_required_str(data, "title", errors, max_len=200)
@@ -1036,6 +1245,22 @@ class SeasonAdminView(AdminAuditedModelView):
             errors.setdefault("ends_at", []).append("Must be a valid datetime")
         if starts_at is not None and ends_at is not None and starts_at > ends_at:
             errors.setdefault("ends_at", []).append("ends_at must be >= starts_at")
+        raw_created_by = data.get("created_by")
+        if raw_created_by not in (None, ""):
+            created_by = self._to_int_or_none(raw_created_by)
+            if created_by is None:
+                errors.setdefault("created_by", []).append("Must be an integer")
+            elif created_by < 1:
+                errors.setdefault("created_by", []).append("Must be >= 1")
+            else:
+                await self._validate_existing_fk(
+                    request,
+                    model=User,
+                    model_id=created_by,
+                    errors=errors,
+                    field="created_by",
+                    message="Must reference an existing user",
+                )
         if errors:
             raise FormValidationError(errors)
 
@@ -1065,6 +1290,7 @@ def get_admin_views() -> list[ModelView]:
         PointsLedgerReadOnlyView(PointsLedger),
         UserAchievementReadOnlyView(UserAchievement),
         UserRewardReadOnlyView(UserReward),
+        AchievementDefinitionAdminView(AchievementDefinition),
         RewardDefinitionAdminView(RewardDefinition),
         UnlockRuleAdminView(UnlockRule),
         ChallengeAdminView(Challenge),

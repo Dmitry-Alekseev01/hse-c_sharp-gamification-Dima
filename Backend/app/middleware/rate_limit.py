@@ -107,15 +107,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _get_scope_and_limit(path: str, method: str) -> tuple[str, int]:
+        method_name = method.upper()
         admin_base = settings.admin_base_url.rstrip("/") or "/admin"
-        if path == f"{admin_base}/login" and method.upper() == "POST":
+        if path == f"{admin_base}/login" and method_name == "POST":
             return "admin_login", settings.rate_limit_admin_login
         if path == admin_base or path.startswith(f"{admin_base}/"):
             return "admin", settings.rate_limit_admin
         if path.startswith("/api/v1/auth/"):
             return "auth", settings.rate_limit_auth
+        if method_name == "GET" and (path == "/api/v1/tests" or path.startswith("/api/v1/tests/")):
+            return "tests_read", settings.rate_limit_tests_read
+        if method_name == "GET" and path.startswith("/api/v1/answers/test/"):
+            return "answers_read", settings.rate_limit_answers_read
+        if method_name == "GET" and path == "/api/v1/analytics/me/learning-dashboard":
+            return "learning_dashboard", settings.rate_limit_learning_dashboard
         if (
-            method.upper() == "PATCH"
+            method_name == "PATCH"
             and path.startswith("/api/v1/users/")
             and path.endswith("/password")
         ):
