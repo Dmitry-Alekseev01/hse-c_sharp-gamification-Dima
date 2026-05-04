@@ -151,6 +151,32 @@ async def get_answers_for_test(
     return res.scalars().all()
 
 
+async def get_answers_for_tests_for_user(
+    session,
+    *,
+    user_id: int,
+    test_ids: list[int],
+) -> dict[int, list[Answer]]:
+    if not test_ids:
+        return {}
+
+    unique_test_ids = list(dict.fromkeys(int(test_id) for test_id in test_ids))
+    stmt = (
+        select(Answer)
+        .where(
+            Answer.user_id == user_id,
+            Answer.test_id.in_(unique_test_ids),
+        )
+        .order_by(Answer.test_id.asc(), Answer.id.asc())
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+
+    grouped: dict[int, list[Answer]] = {test_id: [] for test_id in unique_test_ids}
+    for answer in rows:
+        grouped.setdefault(int(answer.test_id), []).append(answer)
+    return grouped
+
+
 async def get_pending_open_answers(
     session,
     limit: int = 100,

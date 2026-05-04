@@ -169,3 +169,47 @@ async def test_answers_by_test_is_cached_and_invalidated_after_new_submission(cl
     assert fourth_response.status_code == 200, fourth_response.text
     assert len(fourth_response.json()) == 2
     assert call_counter["count"] == 2
+
+
+async def test_tests_list_prewarms_answers_cache_for_visible_tests(client, db, monkeypatch):
+    teacher = await seed_user(db, username="answers_prewarm_teacher@example.com", password="teach123", role="teacher")
+    student = await seed_user(db, username="answers_prewarm_student@example.com", password="stud123", role="user")
+
+    teacher_token = await login(client, teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+
+    test_payload = await _create_test(client, teacher_token, title="Answers prewarm test", published=True)
+    question = await _create_mcq_question(
+        client,
+        teacher_token,
+        test_id=test_payload["id"],
+        text="Prewarm question",
+        points=1.0,
+    )
+    attempt = await _start_attempt(client, student_token, test_payload["id"])
+    await _submit_answer(
+        client,
+        student_token,
+        test_id=test_payload["id"],
+        question_id=question["id"],
+        answer_payload=str(question["choices"][0]["id"]),
+        attempt_id=attempt["id"],
+    )
+
+    call_counter = {"count": 0}
+    original_get_answers = answers_router.answer_repo.get_answers_for_test
+
+    async def counted_get_answers(*args, **kwargs):
+        call_counter["count"] += 1
+        return await original_get_answers(*args, **kwargs)
+
+    monkeypatch.setattr(answers_router.answer_repo, "get_answers_for_test", counted_get_answers, raising=True)
+
+    tests_response = await client.get("/api/v1/tests/", headers=auth_headers(student_token))
+    assert tests_response.status_code == 200, tests_response.text
+
+    answers_response = await client.get(f"/api/v1/answers/test/{test_payload['id']}", headers=auth_headers(student_token))
+    assert answers_response.status_code == 200, answers_response.text
+    assert len(answers_response.json()) == 1
+    # Cached payload is expected after /tests prewarm, so repo fetch should not be called.
+    assert call_counter["count"] == 0

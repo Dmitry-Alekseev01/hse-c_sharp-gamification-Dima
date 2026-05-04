@@ -11,6 +11,7 @@ from app.api.v1.access import (
 )
 from app.api.deps import get_db
 from app.cache.redis_cache import (
+    ANSWERS_BY_TEST_TTL,
     NS_MATERIALS,
     NS_QUESTIONS,
     NS_TESTS,
@@ -22,6 +23,7 @@ from app.cache.redis_cache import (
     TEST_DETAIL_TTL,
     TEST_SUMMARY_TTL,
     bump_cache_namespace,
+    cache_key_answers_for_test,
     cache_key_test_content_for_user,
     cache_key_test_content,
     cache_key_test_detail,
@@ -35,12 +37,13 @@ from app.cache.redis_cache import (
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.schemas.grading import AttemptScoreUpdate
+from app.schemas.answer import AnswerRead
 from app.schemas.question import QuestionRead
 from app.schemas.test_ import TestCardRead, TestCreate, TestRead, TestUpdate
 from app.schemas.analytics import TestSummary
 from app.schemas.test_attempt import TestAttemptQuotaRead, TestAttemptRead, TestAttemptStateRead
 from app.schemas.test_content import TestContentRead, TestContentWrite
-from app.repositories import analytics_repo, test_repo, test_attempt_repo
+from app.repositories import analytics_repo, answer_repo, test_repo, test_attempt_repo
 from app.repositories import question_repo
 from app.services import test_service
 from app.services.challenge_service import ChallengeEventType, record_event
@@ -84,6 +87,40 @@ def _build_attempt_state_payload(
     )
 
 
+async def _prewarm_answers_cache_for_tests(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    tests: list,
+) -> None:
+    """
+    Best-effort cache prewarm for /answers/test/{id} calls that typically follow /tests
+    on the frontend (home/personal/analytics pages).
+    """
+    if not tests:
+        return
+
+    test_ids = [int(test.id) for test in tests]
+    answers_by_test = await answer_repo.get_answers_for_tests_for_user(
+        db,
+        user_id=user_id,
+        test_ids=test_ids,
+    )
+    summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+
+    for test_id in test_ids:
+        answers = answers_by_test.get(test_id, [])
+        payload = [AnswerRead.model_validate(item).model_dump(mode="json") for item in answers]
+        cache_key = cache_key_answers_for_test(
+            test_id=test_id,
+            user_id=user_id,
+            limit=100,
+            offset=0,
+            version=summary_version,
+        )
+        await set(cache_key, payload, ttl=ANSWERS_BY_TEST_TTL)
+
+
 @router.get("/", response_model=List[TestRead], status_code=status.HTTP_200_OK)
 async def list_tests(
     published_only: bool = True,
@@ -115,6 +152,17 @@ async def list_tests(
             for item in items
             if await is_unlocked_test(db, current_user, item, total_points=total_points)
         ]
+        try:
+            # Prewarm answer caches for common frontend flow:
+            # /tests -> /answers/test/{id} for each visible test.
+            await _prewarm_answers_cache_for_tests(
+                db,
+                user_id=current_user.id,
+                tests=items,
+            )
+        except Exception:
+            # Cache prewarm is best-effort and must not affect API response.
+            pass
     if published_only:
         payload = [TestRead.model_validate(item).model_dump(mode="json") for item in items]
         await set(cache_key, payload, ttl=TESTS_LIST_TTL)

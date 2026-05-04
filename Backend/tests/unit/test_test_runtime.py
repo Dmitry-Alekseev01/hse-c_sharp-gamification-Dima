@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 pytestmark = pytest.mark.asyncio
 
@@ -8,6 +9,7 @@ from app.models.answer import Answer
 from app.models.choice import Choice
 from app.models.question import Question
 from app.models.test_ import Test
+from app.models.test_attempt import TestAttempt
 from app.models.user import User
 from app.repositories import test_attempt_repo
 from app.services.answer_service import submit_answer
@@ -85,3 +87,59 @@ async def test_manual_attempt_score_overrides_computed_score(db):
 
     assert attempt.score == pytest.approx(3.5)
     assert attempt.manual_score == pytest.approx(3.5)
+
+
+@pytest.mark.asyncio
+async def test_resolve_attempt_for_user_recovers_from_unique_violation_race(db, monkeypatch):
+    user = User(username="attempt_user_race", password_hash="x")
+    test = Test(title="race policy", max_attempts=2)
+    db.add_all([user, test])
+    await db.flush()
+
+    fallback_attempt = TestAttempt(id=999, user_id=user.id, test_id=test.id, status="in_progress")
+    calls = {"get_active": 0}
+
+    async def fake_get_active_attempt(session, user_id: int, test_id: int):  # noqa: ARG001
+        calls["get_active"] += 1
+        if calls["get_active"] == 1:
+            return None
+        return fallback_attempt
+
+    async def fake_create_attempt(session, user_id: int, test_id: int):  # noqa: ARG001
+        raise IntegrityError(
+            "INSERT INTO test_attempts ...",
+            {"user_id": user_id, "test_id": test_id},
+            Exception('duplicate key value violates unique constraint "ux_test_attempts_active_user_test"'),
+        )
+
+    monkeypatch.setattr(test_attempt_repo, "get_active_attempt", fake_get_active_attempt)
+    monkeypatch.setattr(test_attempt_repo, "create_attempt", fake_create_attempt)
+
+    attempt = await resolve_attempt_for_user(db, test, user.id)
+
+    assert attempt is fallback_attempt
+    assert calls["get_active"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_resolve_attempt_for_user_reraises_non_target_integrity_error(db, monkeypatch):
+    user = User(username="attempt_user_non_target", password_hash="x")
+    test = Test(title="non target integrity error", max_attempts=2)
+    db.add_all([user, test])
+    await db.flush()
+
+    async def fake_get_active_attempt(session, user_id: int, test_id: int):  # noqa: ARG001
+        return None
+
+    async def fake_create_attempt(session, user_id: int, test_id: int):  # noqa: ARG001
+        raise IntegrityError(
+            "INSERT INTO test_attempts ...",
+            {"user_id": user_id, "test_id": test_id},
+            Exception("some other constraint violation"),
+        )
+
+    monkeypatch.setattr(test_attempt_repo, "get_active_attempt", fake_get_active_attempt)
+    monkeypatch.setattr(test_attempt_repo, "create_attempt", fake_create_attempt)
+
+    with pytest.raises(IntegrityError):
+        await resolve_attempt_for_user(db, test, user.id)
