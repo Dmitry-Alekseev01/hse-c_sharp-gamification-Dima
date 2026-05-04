@@ -26,6 +26,7 @@ ANSWERS_BY_TEST_TTL = 90
 TESTS_CATALOG_TTL = 90
 LEARNING_DASHBOARD_TTL = 300
 USER_LEVEL_CONTEXT_TTL = 60
+USER_PROGRESS_TTL = 120
 
 def get_redis_client() -> aioredis.Redis:
     global _redis
@@ -196,6 +197,10 @@ def cache_key_learning_dashboard_stale(*, user_id: int, limit: int) -> str:
 
 def cache_key_user_level_context(*, user_id: int, summary_version: int = 0) -> str:
     return f"analytics:user-level:v{summary_version}:u{user_id}"
+
+
+def cache_key_user_progress(*, user_id: int, summary_version: int = 0) -> str:
+    return f"analytics:user-progress:v{summary_version}:u{user_id}"
 
 
 def cache_key_answers_for_test(

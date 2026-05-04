@@ -15,8 +15,10 @@ from app.cache.redis_cache import (
     NS_LEADERBOARD,
     NS_TESTS,
     NS_TEST_SUMMARY,
+    USER_PROGRESS_TTL,
     cache_key_learning_dashboard,
     cache_key_learning_dashboard_stale,
+    cache_key_user_progress,
     cache_key_leaderboard_page,
     get,
     get_cache_namespace_version,
@@ -138,9 +140,17 @@ async def get_user_progress(
     current_user: User = Depends(get_current_user),
 ):
     await ensure_teacher_or_admin_can_access_user(db, current_user, user_id)
+    summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+    cache_key = cache_key_user_progress(user_id=user_id, summary_version=summary_version)
+    cached = await get(cache_key)
+    if cached is not None:
+        return cached
+
     progress = await analytics_repo.get_gamification_progress(db, user_id)
     if progress is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    await set(cache_key, progress, ttl=USER_PROGRESS_TTL)
     return progress
 
 

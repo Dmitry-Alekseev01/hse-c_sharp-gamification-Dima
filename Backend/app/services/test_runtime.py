@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
+
 from app.models.test_ import Test
 from app.models.test_attempt import TestAttempt
 from app.repositories import analytics_repo, test_attempt_repo
@@ -8,6 +10,11 @@ from app.services.challenge_service import ChallengeEventType, record_event
 
 class AttemptPolicyError(ValueError):
     pass
+
+
+def _is_active_attempt_unique_violation(exc: IntegrityError) -> bool:
+    text = str(getattr(exc, "orig", exc))
+    return "ux_test_attempts_active_user_test" in text
 
 
 def utcnow() -> datetime:
@@ -90,4 +97,14 @@ async def resolve_attempt_for_user(session, test: Test, user_id: int, attempt_id
     if completed_attempts >= max(max_attempts, 1):
         raise AttemptPolicyError("No attempts remaining for this test")
 
-    return await test_attempt_repo.create_attempt(session, user_id, test.id)
+    try:
+        return await test_attempt_repo.create_attempt(session, user_id, test.id)
+    except IntegrityError as exc:
+        if not _is_active_attempt_unique_violation(exc):
+            raise
+        # Race condition: another request created an in-progress attempt first.
+        await session.rollback()
+        active_attempt = await test_attempt_repo.get_active_attempt(session, user_id, test.id)
+        if active_attempt is not None:
+            return active_attempt
+        raise
