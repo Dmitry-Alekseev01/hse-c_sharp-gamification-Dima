@@ -34,6 +34,8 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
         raise LookupError("Question not found")
     if question.test_id != test_id:
         raise ValueError("Question does not belong to the specified test")
+    normalized_payload = "" if payload is None else str(payload)
+    trimmed_payload = normalized_payload.strip()
 
     if attempt_id is not None:
         attempt = await test_attempt_repo.get_attempt(session, attempt_id)
@@ -45,15 +47,23 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
             raise ValueError("Attempt is already completed")
 
     is_open = bool(question.is_open_answer)
+    skipped_closed_answer = False
+    skipped_open_answer = False
 
     if not is_open:
-        try:
-            choice_id = int(str(payload).strip())
-        except (TypeError, ValueError):
-            raise ValueError("Closed question answer must be a valid choice id")
-        choice: Optional[Choice] = await session.get(Choice, choice_id)
-        if choice is None or choice.question_id != question_id:
-            raise ValueError("Selected choice does not belong to the specified question")
+        if trimmed_payload.lower() in {"", "null", "none"}:
+            skipped_closed_answer = True
+            normalized_payload = ""
+        else:
+            try:
+                choice_id = int(trimmed_payload)
+            except (TypeError, ValueError):
+                raise ValueError("Closed question answer must be a valid choice id")
+            choice: Optional[Choice] = await session.get(Choice, choice_id)
+            if choice is None or choice.question_id != question_id:
+                raise ValueError("Selected choice does not belong to the specified question")
+    elif trimmed_payload == "":
+        skipped_open_answer = True
 
     # 1) persist or replace an existing answer for the same question slot
     ans, previous_score = await answer_repo.upsert_answer(
@@ -61,7 +71,7 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
         user_id=user_id,
         test_id=test_id,
         question_id=question_id,
-        payload=payload,
+        payload=normalized_payload,
         attempt_id=attempt_id,
     )
 
@@ -72,15 +82,28 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
         graded = await answer_repo.grade_mcq_answer(session, ans.id)
         current_score = float(graded.score) if (graded and graded.score is not None) else 0.0
         points_delta = current_score - previous_score
+        if skipped_closed_answer and graded is not None and graded.score is None:
+            # Keep skipped MCQ explicitly zero-scored for stable attempt aggregation.
+            graded.score = 0.0
+            await session.flush()
+            await session.refresh(graded)
     else:
-        # open answer -> push to redis queue for manual grading
-        try:
-            r = get_redis_client()
-            job = {"answer_id": ans.id, "user_id": user_id}
-            await r.rpush("grading:open", json.dumps(job))
-        except Exception:
-            # if redis queueing fails, continue; the answer remains ungraded
-            pass
+        if skipped_open_answer:
+            # Empty open answer is treated as an intentionally skipped question.
+            ans.score = 0.0
+            ans.graded_by = None
+            ans.graded_at = None
+            await session.flush()
+            await session.refresh(ans)
+        else:
+            # open answer -> push to redis queue for manual grading
+            try:
+                r = get_redis_client()
+                job = {"answer_id": ans.id, "user_id": user_id}
+                await r.rpush("grading:open", json.dumps(job))
+            except Exception:
+                # if redis queueing fails, continue; the answer remains ungraded
+                pass
 
     await analytics_repo.create_or_update_analytics(
         session,

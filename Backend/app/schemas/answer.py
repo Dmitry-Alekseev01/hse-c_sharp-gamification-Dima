@@ -8,11 +8,11 @@ class AnswerCreate(BaseModel):
     question_id: int
     answer_payload: str
 
-    @field_validator("answer_payload")
-    def not_empty(cls, v):
-        if v is None or str(v).strip() == "":
-            raise ValueError("answer_payload must not be empty")
-        return str(v).strip()
+    @field_validator("answer_payload", mode="before")
+    def normalize_payload(cls, v):
+        if v is None:
+            return ""
+        return str(v)
 
     model_config = ConfigDict(from_attributes=True)
 
