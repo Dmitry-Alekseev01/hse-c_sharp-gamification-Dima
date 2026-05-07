@@ -68,12 +68,10 @@ def build_attempt_view_state(
         attempt_state = "blocked"
         block_reason = "no_attempts"
 
-    # Legacy card status for existing clients:
-    # if retry is available, expose as not_started so old UI keeps Start button enabled.
+    # Human-readable status for UI labels.
+    # Action buttons should rely on can_start/can_resume/attempt_state.
     if has_active_attempt:
         user_status: ProgressState = "in_progress"
-    elif remaining_attempts > 0:
-        user_status = "not_started"
     elif normalized_completed_attempts > 0:
         user_status = "completed"
     else:

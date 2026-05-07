@@ -209,6 +209,9 @@ components:
               type: string
               enum: [not_started, in_progress, completed]
               default: not_started
+              description: >
+                `in_progress` when there is an active attempt; `completed` when there is at least one completed
+                attempt and no active attempt; otherwise `not_started`.
             progress_state:
               type: string
               enum: [not_started, in_progress, completed]
@@ -289,6 +292,9 @@ components:
         user_status:
           type: string
           enum: [not_started, in_progress, completed]
+          description: >
+            `in_progress` when there is an active attempt; `completed` when there is at least one completed
+            attempt and no active attempt; otherwise `not_started`.
         progress_state:
           type: string
           enum: [not_started, in_progress, completed]
@@ -1246,6 +1252,8 @@ paths:
       description: >
         Returns test cards with attempt/score/actionability state in one call.
         Use `attempt_state`, `can_start`, `can_resume`, and `block_reason` as source of truth for UI actions.
+        Test visibility by `required_level` uses effective access points based on latest completed attempt
+        score per test (with legacy fallback for old datasets without attempts).
         Recommended for tests list/home widgets where per-test status is needed.
       parameters:
         - in: query
@@ -1628,7 +1636,9 @@ paths:
   /api/v1/analytics/me/learning-dashboard:
     get:
       summary: Aggregated learning dashboard for current user (home/personal/analytics screens)
-      description: Primary endpoint for homepage dashboard widgets and summary metrics.
+      description: >
+        Primary endpoint for homepage dashboard widgets and summary metrics.
+        Visible tests/materials in this payload follow the same required-level access policy as `/tests/catalog/me`.
       parameters:
         - in: query
           name: limit

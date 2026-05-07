@@ -219,8 +219,13 @@ def cache_key_learning_dashboard_stale(*, user_id: int, limit: int) -> str:
     return f"analytics:learning-dashboard:stale:u{user_id}:l{limit}"
 
 
-def cache_key_user_level_context(*, user_id: int, summary_version: int = 0) -> str:
-    return f"analytics:user-level:v{summary_version}:u{user_id}"
+def cache_key_user_level_context(
+    *,
+    user_id: int,
+    summary_version: int = 0,
+    attempts_version: int = 0,
+) -> str:
+    return f"analytics:user-level:v{summary_version}:a{attempts_version}:u{user_id}"
 
 
 def cache_key_user_progress(*, user_id: int, summary_version: int = 0) -> str:
