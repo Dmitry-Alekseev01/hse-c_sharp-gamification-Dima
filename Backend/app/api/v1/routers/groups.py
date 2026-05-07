@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -55,7 +56,10 @@ async def create_group(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles("teacher", "admin")),
 ):
-    group = await group_repo.create_group(db, payload.name, current_user.id)
+    try:
+        group = await group_repo.create_group(db, payload.name, current_user.id)
+    except IntegrityError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group name already exists") from exc
     return group
 
 
@@ -111,6 +115,8 @@ async def add_group_member(
         await group_repo.add_user_to_group(db, group, user_id)
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except IntegrityError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already in this group") from exc
     refreshed = await group_repo.get_group(db, group_id)
     return _serialize_group(refreshed)
 

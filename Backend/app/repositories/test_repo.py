@@ -3,6 +3,7 @@ from typing import Any
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
+from app.core.test_attempts import build_attempt_view_state, is_deadline_passed, utcnow_naive
 from app.models.answer import Answer
 from app.models.question import Question
 from app.models.test_ import Test
@@ -162,9 +163,9 @@ async def get_user_test_state_map(
     }
 
     result: dict[int, dict[str, Any]] = {}
+    now = utcnow_naive()
     for test_id in test_ids:
         test = tests_by_id[test_id]
-        max_attempts = max(int(test.max_attempts or 1), 1)
 
         attempts_data = attempts_map.get(test_id, {})
         completed_attempts = int(attempts_data.get("completed_attempts") or 0)
@@ -186,20 +187,26 @@ async def get_user_test_state_map(
             if test.max_score is not None:
                 user_max_score = float(test.max_score)
 
-        if active_attempt_id is not None:
-            user_status = "in_progress"
-        elif completed_attempts > 0:
-            user_status = "completed"
-        else:
-            user_status = "not_started"
+        attempt_view_state = build_attempt_view_state(
+            max_attempts=test.max_attempts,
+            completed_attempts=completed_attempts,
+            has_active_attempt=active_attempt_id is not None,
+            deadline_passed=is_deadline_passed(test.deadline, now=now),
+        )
 
         result[test_id] = {
             "total_questions": int(question_counts.get(test_id, 0)),
-            "user_status": user_status,
+            "user_status": attempt_view_state["user_status"],
+            "progress_state": attempt_view_state["progress_state"],
+            "attempt_state": attempt_view_state["attempt_state"],
+            "can_start": attempt_view_state["can_start"],
+            "can_resume": attempt_view_state["can_resume"],
+            "block_reason": attempt_view_state["block_reason"],
             "has_active_attempt": active_attempt_id is not None,
             "active_attempt_id": active_attempt_id,
             "completed_attempts": completed_attempts,
-            "remaining_attempts": max(max_attempts - completed_attempts, 0),
+            "remaining_attempts": attempt_view_state["remaining_attempts"],
+            "max_attempts": attempt_view_state["max_attempts"],
             "user_score": float(user_score) if user_score is not None else None,
             "user_max_score": float(user_max_score) if user_max_score is not None else None,
             "latest_completed_at": latest_completed_at,

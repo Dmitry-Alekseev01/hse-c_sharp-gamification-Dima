@@ -154,6 +154,17 @@ class LearningTestResultRead(BaseModel):
     title: str
     deadline: datetime | None
     user_status: Literal["not_started", "in_progress", "completed"]
+    progress_state: Literal["not_started", "in_progress", "completed"] = "not_started"
+    attempt_state: Literal["can_start", "can_resume", "blocked"] = "can_start"
+    can_start: bool = True
+    can_resume: bool = False
+    block_reason: Literal[
+        "no_attempts",
+        "deadline_passed",
+        "time_limit_exceeded",
+        "level_locked",
+        "test_unpublished",
+    ] | None = None
     has_active_attempt: bool
     completed_attempts: int
     remaining_attempts: int

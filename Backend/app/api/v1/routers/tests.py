@@ -23,6 +23,7 @@ from app.cache.redis_cache import (
     TEST_DETAIL_TTL,
     TEST_SUMMARY_TTL,
     bump_cache_namespace,
+    bump_user_attempts_state_version,
     cache_key_answers_for_test,
     cache_key_test_content_for_user,
     cache_key_test_content,
@@ -31,17 +32,19 @@ from app.cache.redis_cache import (
     cache_key_tests_catalog_me,
     cache_key_test_summary,
     get_cache_namespace_version,
+    get_user_attempts_state_version,
     get,
     set,
 )
 from app.core.security import get_current_user, require_roles
+from app.core.test_attempts import AttemptBlockReason, build_attempt_view_state, is_deadline_passed
 from app.models.user import User
 from app.schemas.grading import AttemptScoreUpdate
 from app.schemas.answer import AnswerRead
 from app.schemas.question import QuestionRead
 from app.schemas.test_ import TestCardRead, TestCreate, TestRead, TestUpdate
 from app.schemas.analytics import TestSummary
-from app.schemas.test_attempt import TestAttemptQuotaRead, TestAttemptRead, TestAttemptStateRead
+from app.schemas.test_attempt import TestAttemptQuotaRead, TestAttemptRead, TestAttemptStartRead, TestAttemptStateRead
 from app.schemas.test_content import TestContentRead, TestContentWrite
 from app.repositories import analytics_repo, answer_repo, test_repo, test_attempt_repo
 from app.repositories import question_repo
@@ -50,6 +53,43 @@ from app.services.challenge_service import ChallengeEventType, record_event
 from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user, utcnow
 
 router = APIRouter()
+
+
+def _resolve_block_reason_from_policy_error(exc: AttemptPolicyError) -> AttemptBlockReason | None:
+    code = getattr(exc, "code", "")
+    if code in {"no_attempts", "deadline_passed", "time_limit_exceeded"}:
+        return code
+    return None
+
+
+async def _build_attempt_quota_payload(
+    db: AsyncSession,
+    *,
+    test,
+    user_id: int,
+    forced_block_reason: AttemptBlockReason | None = None,
+) -> TestAttemptQuotaRead:
+    completed_attempts = await test_attempt_repo.count_completed_attempts_for_user_test(db, user_id, test.id)
+    active_attempt = await test_attempt_repo.get_active_attempt(db, user_id, test.id)
+    attempt_state = build_attempt_view_state(
+        max_attempts=test.max_attempts,
+        completed_attempts=completed_attempts,
+        has_active_attempt=active_attempt is not None,
+        deadline_passed=is_deadline_passed(test.deadline),
+        forced_block_reason=forced_block_reason,
+    )
+    return TestAttemptQuotaRead(
+        test_id=test.id,
+        max_attempts=attempt_state["max_attempts"],
+        completed_attempts=attempt_state["completed_attempts"],
+        remaining_attempts=attempt_state["remaining_attempts"],
+        has_active_attempt=attempt_state["has_active_attempt"],
+        progress_state=attempt_state["progress_state"],
+        attempt_state=attempt_state["attempt_state"],
+        can_start=attempt_state["can_start"],
+        can_resume=attempt_state["can_resume"],
+        block_reason=attempt_state["block_reason"],
+    )
 
 
 def _build_attempt_state_payload(
@@ -184,12 +224,14 @@ async def list_tests_with_my_state(
     if should_cache:
         tests_version = await get_cache_namespace_version(NS_TESTS)
         summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+        attempts_version = await get_user_attempts_state_version(current_user.id)
         cache_key = cache_key_tests_catalog_me(
             user_id=current_user.id,
             published_only=published_only,
             limit=limit,
             tests_version=tests_version,
             summary_version=summary_version,
+            attempts_version=attempts_version,
         )
         cached = await get(cache_key)
         if cached is not None:
@@ -225,6 +267,11 @@ async def list_tests_with_my_state(
                     **base,
                     "total_questions": int(state.get("total_questions", 0)),
                     "user_status": state.get("user_status", "not_started"),
+                    "progress_state": state.get("progress_state", state.get("user_status", "not_started")),
+                    "attempt_state": state.get("attempt_state", "can_start"),
+                    "can_start": bool(state.get("can_start", True)),
+                    "can_resume": bool(state.get("can_resume", False)),
+                    "block_reason": state.get("block_reason"),
                     "has_active_attempt": bool(state.get("has_active_attempt", False)),
                     "active_attempt_id": state.get("active_attempt_id"),
                     "completed_attempts": int(state.get("completed_attempts", 0)),
@@ -243,6 +290,25 @@ async def list_tests_with_my_state(
             ttl=TESTS_CATALOG_TTL,
         )
     return payload
+
+
+@router.get("/page/me", response_model=List[TestCardRead], status_code=status.HTTP_200_OK)
+async def list_tests_page_cards(
+    published_only: bool = True,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Screen-oriented alias for tests page cards.
+    Returns the same payload as /tests/catalog/me.
+    """
+    return await list_tests_with_my_state(
+        published_only=published_only,
+        limit=limit,
+        db=db,
+        current_user=current_user,
+    )
 
 
 @router.get("/{test_id}", response_model=TestRead, status_code=status.HTTP_200_OK)
@@ -408,17 +474,62 @@ async def replace_test_content(
     }
 
 
-@router.post("/{test_id}/attempts/start", response_model=TestAttemptRead, status_code=status.HTTP_201_CREATED)
+@router.post("/{test_id}/attempts/start", response_model=TestAttemptStartRead, status_code=status.HTTP_201_CREATED)
 async def start_test_attempt(
     test_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     test = await get_visible_test(db, test_id, current_user)
+    active_attempt_before = await test_attempt_repo.get_active_attempt(db, current_user.id, test_id)
     try:
-        return await resolve_attempt_for_user(db, test, current_user.id)
+        attempt = await resolve_attempt_for_user(db, test, current_user.id)
+        await bump_user_attempts_state_version(current_user.id)
+        action = "resumed" if active_attempt_before is not None and active_attempt_before.id == attempt.id else "started"
+        quota = await _build_attempt_quota_payload(
+            db,
+            test=test,
+            user_id=current_user.id,
+        )
+        payload = {
+            **TestAttemptRead.model_validate(attempt).model_dump(mode="python"),
+            "action": action,
+            "max_attempts": quota.max_attempts,
+            "completed_attempts": quota.completed_attempts,
+            "remaining_attempts": quota.remaining_attempts,
+            "has_active_attempt": quota.has_active_attempt,
+            "progress_state": quota.progress_state,
+            "attempt_state": quota.attempt_state,
+            "can_start": quota.can_start,
+            "can_resume": quota.can_resume,
+            "block_reason": quota.block_reason,
+        }
+        return TestAttemptStartRead.model_validate(payload)
     except AttemptPolicyError as exc:
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(exc)})
+        if getattr(exc, "code", "") in {"deadline_passed", "time_limit_exceeded"}:
+            await bump_user_attempts_state_version(current_user.id)
+        block_reason = _resolve_block_reason_from_policy_error(exc)
+        quota = await _build_attempt_quota_payload(
+            db,
+            test=test,
+            user_id=current_user.id,
+            forced_block_reason=block_reason,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": str(exc),
+                "block_reason": block_reason,
+                "attempt_state": quota.attempt_state,
+                "can_start": quota.can_start,
+                "can_resume": quota.can_resume,
+                "progress_state": quota.progress_state,
+                "max_attempts": quota.max_attempts,
+                "completed_attempts": quota.completed_attempts,
+                "remaining_attempts": quota.remaining_attempts,
+                "has_active_attempt": quota.has_active_attempt,
+            },
+        )
 
 
 @router.get("/{test_id}/attempts/me", response_model=List[TestAttemptRead], status_code=status.HTTP_200_OK)
@@ -438,15 +549,10 @@ async def get_my_test_attempt_quota(
     current_user: User = Depends(get_current_user),
 ):
     test = await get_visible_test(db, test_id, current_user)
-    max_attempts = max(int(test.max_attempts or 1), 1)
-    completed_attempts = await test_attempt_repo.count_completed_attempts_for_user_test(db, current_user.id, test_id)
-    active_attempt = await test_attempt_repo.get_active_attempt(db, current_user.id, test_id)
-    return TestAttemptQuotaRead(
-        test_id=test_id,
-        max_attempts=max_attempts,
-        completed_attempts=completed_attempts,
-        remaining_attempts=max(max_attempts - completed_attempts, 0),
-        has_active_attempt=active_attempt is not None,
+    return await _build_attempt_quota_payload(
+        db,
+        test=test,
+        user_id=current_user.id,
     )
 
 
@@ -467,6 +573,8 @@ async def get_attempt_state(
         await get_manageable_test(db, attempt.test_id, current_user)
 
     attempt, reason = await finalize_attempt_if_expired(db, test, attempt)
+    if reason is not None:
+        await bump_user_attempts_state_version(attempt.user_id)
     return _build_attempt_state_payload(test=test, attempt=attempt, expired_reason=reason)
 
 
@@ -486,10 +594,13 @@ async def complete_test_attempt(
         await get_manageable_test(db, attempt.test_id, current_user)
     if attempt.status == "completed":
         return attempt
-    _, _ = await finalize_attempt_if_expired(db, test, attempt)
+    _, reason = await finalize_attempt_if_expired(db, test, attempt)
     if attempt.status == "completed":
+        if reason is not None:
+            await bump_user_attempts_state_version(attempt.user_id)
         return attempt
     completed_attempt = await test_attempt_repo.complete_attempt(db, attempt)
+    await bump_user_attempts_state_version(completed_attempt.user_id)
     await analytics_repo.register_completed_attempt(db, completed_attempt.user_id, attempt_id=completed_attempt.id)
     await record_event(
         db,
@@ -530,4 +641,6 @@ async def override_attempt_score(
             detail=f"Score must be between 0 and {max_score}",
         )
 
-    return await test_attempt_repo.set_manual_score(db, attempt, payload.score)
+    updated_attempt = await test_attempt_repo.set_manual_score(db, attempt, payload.score)
+    await bump_user_attempts_state_version(updated_attempt.user_id)
+    return updated_attempt

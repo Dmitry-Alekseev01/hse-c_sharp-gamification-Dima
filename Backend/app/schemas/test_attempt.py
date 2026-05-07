@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
+from typing import Literal
 
 
 class TestAttemptCreate(BaseModel):
@@ -29,6 +30,36 @@ class TestAttemptQuotaRead(BaseModel):
     completed_attempts: int
     remaining_attempts: int
     has_active_attempt: bool
+    progress_state: Literal["not_started", "in_progress", "completed"] = "not_started"
+    attempt_state: Literal["can_start", "can_resume", "blocked"] = "can_start"
+    can_start: bool = True
+    can_resume: bool = False
+    block_reason: Literal[
+        "no_attempts",
+        "deadline_passed",
+        "time_limit_exceeded",
+        "level_locked",
+        "test_unpublished",
+    ] | None = None
+
+
+class TestAttemptStartRead(TestAttemptRead):
+    action: Literal["started", "resumed"]
+    max_attempts: int
+    completed_attempts: int
+    remaining_attempts: int
+    has_active_attempt: bool
+    progress_state: Literal["not_started", "in_progress", "completed"] = "not_started"
+    attempt_state: Literal["can_start", "can_resume", "blocked"] = "can_start"
+    can_start: bool = True
+    can_resume: bool = False
+    block_reason: Literal[
+        "no_attempts",
+        "deadline_passed",
+        "time_limit_exceeded",
+        "level_locked",
+        "test_unpublished",
+    ] | None = None
 
 
 class TestAttemptStateRead(BaseModel):
