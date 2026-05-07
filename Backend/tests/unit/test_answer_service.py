@@ -241,3 +241,64 @@ async def test_public_question_schema_hides_correct_answers(db):
 
     assert payload["choices"]
     assert "is_correct" not in payload["choices"][0]
+
+
+@pytest.mark.asyncio
+async def test_submit_answer_treats_blank_open_answer_as_skipped_without_queue(db, monkeypatch):
+    from app.services import answer_service as answer_service_module
+
+    class DummyRedis:
+        def __init__(self):
+            self.pushed = False
+
+        async def rpush(self, *_args, **_kwargs):
+            self.pushed = True
+
+    redis = DummyRedis()
+    monkeypatch.setattr(answer_service_module, "get_redis_client", lambda: redis)
+
+    user = User(username="blank_open_user", password_hash="x")
+    test = TestModel(title="blank open answer")
+    db.add_all([user, test])
+    await db.flush()
+
+    question = Question(test_id=test.id, text="Explain", points=3.0, is_open_answer=True)
+    db.add(question)
+    await db.flush()
+
+    answer = await submit_answer(
+        db,
+        user_id=user.id,
+        test_id=test.id,
+        question_id=question.id,
+        payload="   ",
+    )
+
+    assert answer.score == pytest.approx(0.0)
+    assert redis.pushed is False
+
+
+@pytest.mark.asyncio
+async def test_submit_answer_treats_null_closed_answer_as_skipped(db):
+    user = User(username="null_closed_user", password_hash="x")
+    test = TestModel(title="null closed answer")
+    db.add_all([user, test])
+    await db.flush()
+
+    question = Question(test_id=test.id, text="Pick answer", points=2.0, is_open_answer=False)
+    db.add(question)
+    await db.flush()
+
+    choice = Choice(question_id=question.id, value="A", ordinal=1, is_correct=True)
+    db.add(choice)
+    await db.flush()
+
+    answer = await submit_answer(
+        db,
+        user_id=user.id,
+        test_id=test.id,
+        question_id=question.id,
+        payload="null",
+    )
+
+    assert answer.score == pytest.approx(0.0)

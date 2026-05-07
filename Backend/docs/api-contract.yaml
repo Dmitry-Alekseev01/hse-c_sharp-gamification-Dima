@@ -559,7 +559,9 @@ components:
         question_id: { type: integer }
         answer_payload:
           type: string
-          description: choice id as string for closed questions, free text for open questions
+          description: >
+            choice id as string for closed questions, free text for open questions.
+            Empty string (or `"null"` for closed questions) is treated as a skipped answer.
 
     AnswerRead:
       type: object
@@ -1490,7 +1492,9 @@ paths:
   /api/v1/answers:
     post:
       summary: Submit answer
-      description: Backend resolves or auto-creates active attempt if attempt_id is omitted.
+      description: >
+        Backend resolves or auto-creates active attempt if attempt_id is omitted.
+        Skipped answers are accepted (`answer_payload=""` for open, `"null"` for closed).
       requestBody:
         required: true
         content:

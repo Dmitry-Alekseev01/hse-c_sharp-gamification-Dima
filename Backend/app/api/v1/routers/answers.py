@@ -83,6 +83,11 @@ async def create_answer(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except AttemptPolicyError as exc:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(exc)})
+    except IntegrityError:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"detail": "Concurrent attempt resolution conflict, please retry"},
+        )
     try:
         ans = await submit_answer(
             db,

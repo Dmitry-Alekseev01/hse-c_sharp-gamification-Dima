@@ -1,6 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.access import (
@@ -520,6 +521,29 @@ async def start_test_attempt(
             content={
                 "detail": str(exc),
                 "block_reason": block_reason,
+                "attempt_state": quota.attempt_state,
+                "can_start": quota.can_start,
+                "can_resume": quota.can_resume,
+                "progress_state": quota.progress_state,
+                "max_attempts": quota.max_attempts,
+                "completed_attempts": quota.completed_attempts,
+                "remaining_attempts": quota.remaining_attempts,
+                "has_active_attempt": quota.has_active_attempt,
+            },
+        )
+    except IntegrityError:
+        # Defensive fallback for rare concurrent starts when db-level unique
+        # conflict races with read-after-rollback recovery.
+        quota = await _build_attempt_quota_payload(
+            db,
+            test=test,
+            user_id=current_user.id,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": "Concurrent attempt start conflict, please retry",
+                "block_reason": quota.block_reason,
                 "attempt_state": quota.attempt_state,
                 "can_start": quota.can_start,
                 "can_resume": quota.can_resume,
