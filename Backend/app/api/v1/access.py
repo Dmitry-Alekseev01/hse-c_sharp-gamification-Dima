@@ -7,6 +7,7 @@ from app.cache.redis_cache import (
     cache_key_user_level_context,
     get as cache_get,
     get_cache_namespace_version,
+    get_user_attempts_state_version,
     set as cache_set,
 )
 from app.models.material import Material
@@ -92,16 +93,21 @@ async def get_user_level_context(db: AsyncSession, current_user: User) -> tuple[
     cache_key = None
     try:
         summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
-        cache_key = cache_key_user_level_context(user_id=current_user.id, summary_version=summary_version)
+        attempts_version = await get_user_attempts_state_version(current_user.id)
+        cache_key = cache_key_user_level_context(
+            user_id=current_user.id,
+            summary_version=summary_version,
+            attempts_version=attempts_version,
+        )
         cached = await cache_get(cache_key)
         if isinstance(cached, dict):
             return float(cached.get("total_points") or 0.0), int(cached.get("level_id") or 0)
     except Exception:
         cache_key = None
 
-    analytics = await analytics_repo.get_user_analytics(db, current_user.id)
-    total_points = float(analytics.total_points or 0.0) if analytics is not None else 0.0
-    level_id = int(analytics.current_level_id or 0) if analytics is not None else 0
+    total_points = await analytics_repo.get_access_points_for_user(db, current_user.id)
+    current_level = await level_repo.get_current_level_for_points(db, total_points)
+    level_id = int(current_level.id) if current_level is not None else 0
 
     if cache_key is not None:
         try:

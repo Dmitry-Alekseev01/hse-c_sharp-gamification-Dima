@@ -287,6 +287,69 @@ async def get_user_analytics(session: AsyncSession, user_id: int) -> Optional[An
     return await get_analytics_for_user(session, user_id)
 
 
+async def get_access_points_for_user(session: AsyncSession, user_id: int) -> float:
+    """
+    Effective access points for level gating.
+
+    Rules:
+    - take score of the latest completed attempt per test;
+    - if no completed attempts exist for a test, fallback to legacy answers
+      (rows with attempt_id IS NULL) for backward compatibility.
+    """
+    latest_completed_subquery = (
+        select(
+            TestAttempt.test_id.label("test_id"),
+            func.coalesce(TestAttempt.score, 0.0).label("score"),
+            func.row_number()
+            .over(
+                partition_by=TestAttempt.test_id,
+                order_by=(TestAttempt.completed_at.desc(), TestAttempt.id.desc()),
+            )
+            .label("row_num"),
+        )
+        .where(
+            TestAttempt.user_id == user_id,
+            TestAttempt.status == "completed",
+        )
+        .subquery()
+    )
+    latest_completed_rows = (
+        await session.execute(
+            select(
+                latest_completed_subquery.c.test_id,
+                latest_completed_subquery.c.score,
+            ).where(latest_completed_subquery.c.row_num == 1)
+        )
+    ).all()
+    latest_scores_by_test = {
+        int(test_id): float(score or 0.0)
+        for test_id, score in latest_completed_rows
+    }
+
+    legacy_scores_rows = (
+        await session.execute(
+            select(
+                Answer.test_id,
+                func.coalesce(func.sum(Answer.score), 0.0).label("score_sum"),
+            )
+            .where(
+                Answer.user_id == user_id,
+                Answer.attempt_id.is_(None),
+            )
+            .group_by(Answer.test_id)
+        )
+    ).all()
+
+    effective_points = sum(latest_scores_by_test.values())
+    for test_id, score_sum in legacy_scores_rows:
+        normalized_test_id = int(test_id)
+        if normalized_test_id in latest_scores_by_test:
+            continue
+        effective_points += float(score_sum or 0.0)
+
+    return max(float(effective_points), 0.0)
+
+
 async def apply_points_delta(
     session: AsyncSession,
     user_id: int,

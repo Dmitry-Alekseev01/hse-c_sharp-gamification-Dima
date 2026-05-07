@@ -219,7 +219,7 @@ async def test_learning_dashboard_aggregates_home_personal_analytics_data(client
     assert in_progress_test["id"] in by_test_id
     assert locked_test["id"] not in by_test_id
 
-    assert by_test_id[completed_test["id"]]["user_status"] == "not_started"
+    assert by_test_id[completed_test["id"]]["user_status"] == "completed"
     assert by_test_id[completed_test["id"]]["progress_state"] == "completed"
     assert by_test_id[completed_test["id"]]["attempt_state"] == "can_start"
     assert by_test_id[completed_test["id"]]["can_start"] is True

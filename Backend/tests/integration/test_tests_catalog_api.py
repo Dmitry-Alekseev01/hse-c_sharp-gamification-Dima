@@ -1,6 +1,7 @@
 import pytest
 
 from app.core.security import get_password_hash
+from app.models.level import Level
 from app.models.user import User
 
 pytestmark = pytest.mark.asyncio
@@ -30,7 +31,16 @@ async def seed_user(db, *, username: str, password: str, role: str) -> User:
     return user
 
 
-async def _create_test(client, token: str, *, title: str, max_score: int, max_attempts: int, published: bool = True) -> dict:
+async def _create_test(
+    client,
+    token: str,
+    *,
+    title: str,
+    max_score: int,
+    max_attempts: int,
+    published: bool = True,
+    required_level_id: int | None = None,
+) -> dict:
     response = await client.post(
         "/api/v1/tests/",
         headers=auth_headers(token),
@@ -39,6 +49,7 @@ async def _create_test(client, token: str, *, title: str, max_score: int, max_at
             "max_score": max_score,
             "max_attempts": max_attempts,
             "published": published,
+            "required_level_id": required_level_id,
         },
     )
     assert response.status_code == 201, response.text
@@ -196,7 +207,7 @@ async def test_tests_catalog_me_returns_aggregated_states_for_current_user(clien
 
     completed_item = next(item for item in items if item["id"] == completed_test["id"])
     assert completed_item["total_questions"] == 1
-    assert completed_item["user_status"] == "not_started"
+    assert completed_item["user_status"] == "completed"
     assert completed_item["progress_state"] == "completed"
     assert completed_item["attempt_state"] == "can_start"
     assert completed_item["can_start"] is True
@@ -376,3 +387,79 @@ async def test_tests_catalog_me_reuses_cache_for_repeat_requests(client, db, mon
     assert counters["list_tests"] == 1
     assert counters["state_map"] == 1
     assert counters["level_context"] == 1
+
+
+async def test_tests_catalog_access_points_use_latest_completed_attempt(client, db):
+    teacher = await seed_user(db, username="catalog_levels_teacher@example.com", password="teach123", role="teacher")
+    student = await seed_user(db, username="catalog_levels_student@example.com", password="stud123", role="user")
+    locked_level = Level(name="Catalog locked level", required_points=50)
+    db.add(locked_level)
+    await db.flush()
+
+    teacher_token = await login(client, teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+
+    source_test = await _create_test(
+        client,
+        teacher_token,
+        title="Catalog source test",
+        max_score=100,
+        max_attempts=2,
+        published=True,
+    )
+    source_question = await _create_mcq_question(
+        client,
+        teacher_token,
+        test_id=source_test["id"],
+        text="Catalog source question",
+        points=100.0,
+    )
+    correct_choice_id = source_question["choices"][0]["id"]
+    wrong_choice_id = source_question["choices"][1]["id"]
+
+    locked_test = await _create_test(
+        client,
+        teacher_token,
+        title="Catalog locked test",
+        max_score=10,
+        max_attempts=1,
+        published=True,
+        required_level_id=locked_level.id,
+    )
+
+    initial_catalog = await client.get("/api/v1/tests/catalog/me", headers=auth_headers(student_token))
+    assert initial_catalog.status_code == 200, initial_catalog.text
+    initial_ids = {item["id"] for item in initial_catalog.json()}
+    assert locked_test["id"] not in initial_ids
+
+    first_attempt = await _start_attempt(client, student_token, source_test["id"])
+    await _submit_answer(
+        client,
+        student_token,
+        test_id=source_test["id"],
+        question_id=source_question["id"],
+        answer_payload=str(correct_choice_id),
+        attempt_id=first_attempt["id"],
+    )
+    await _complete_attempt(client, student_token, first_attempt["id"])
+
+    unlocked_catalog = await client.get("/api/v1/tests/catalog/me", headers=auth_headers(student_token))
+    assert unlocked_catalog.status_code == 200, unlocked_catalog.text
+    unlocked_ids = {item["id"] for item in unlocked_catalog.json()}
+    assert locked_test["id"] in unlocked_ids
+
+    second_attempt = await _start_attempt(client, student_token, source_test["id"])
+    await _submit_answer(
+        client,
+        student_token,
+        test_id=source_test["id"],
+        question_id=source_question["id"],
+        answer_payload=str(wrong_choice_id),
+        attempt_id=second_attempt["id"],
+    )
+    await _complete_attempt(client, student_token, second_attempt["id"])
+
+    locked_again_catalog = await client.get("/api/v1/tests/catalog/me", headers=auth_headers(student_token))
+    assert locked_again_catalog.status_code == 200, locked_again_catalog.text
+    locked_again_ids = {item["id"] for item in locked_again_catalog.json()}
+    assert locked_test["id"] not in locked_again_ids

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.access import ensure_teacher_or_admin_can_access_user
+from app.api.v1.access import ensure_teacher_or_admin_can_access_user, get_user_level_context
 from app.api.deps import get_db
 from app.cache.redis_cache import (
     LEARNING_DASHBOARD_TTL,
@@ -181,10 +181,11 @@ async def get_my_learning_dashboard(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
         total_points = float(progress.get("total_points") or 0.0)
+        access_points, _ = await get_user_level_context(db, current_user)
         total_materials = await material_repo.count_visible_materials_for_user(
             db,
             role=current_user.role,
-            total_points=total_points,
+            total_points=access_points,
         )
 
         tests = await test_repo.list_tests(db, published_only=True, limit=limit)
@@ -192,7 +193,7 @@ async def get_my_learning_dashboard(
             tests = [
                 test
                 for test in tests
-                if test.required_level is None or float(test.required_level.required_points or 0.0) <= total_points
+                if test.required_level is None or float(test.required_level.required_points or 0.0) <= access_points
             ]
 
         state_map = await test_repo.get_user_test_state_map(

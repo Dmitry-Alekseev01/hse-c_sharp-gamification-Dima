@@ -36,6 +36,38 @@ async def test_create_or_update_analytics_and_leaderboard(db):
 
 
 @pytest.mark.asyncio
+async def test_access_points_use_latest_completed_attempt_per_test(db):
+    user = User(username="access_points_user", password_hash="x", full_name="Access Points", role="user")
+    source_test = Test(title="Access points source", published=True, max_score=100, max_attempts=3)
+    db.add_all([user, source_test])
+    await db.flush()
+
+    first_attempt = AttemptModel(
+        user_id=user.id,
+        test_id=source_test.id,
+        status="completed",
+        score=60.0,
+        max_score=100.0,
+        submitted_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=2),
+        completed_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=2),
+    )
+    second_attempt = AttemptModel(
+        user_id=user.id,
+        test_id=source_test.id,
+        status="completed",
+        score=10.0,
+        max_score=100.0,
+        submitted_at=datetime.now(UTC).replace(tzinfo=None),
+        completed_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add_all([first_attempt, second_attempt])
+    await db.flush()
+
+    access_points = await analytics_repo.get_access_points_for_user(db, user.id)
+    assert access_points == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
 async def test_tests_taken_changes_only_for_completed_attempts(db):
     user = User(username="analytics_user", password_hash="x", full_name="Analytics", role="user")
     db.add(user)
@@ -188,4 +220,3 @@ async def test_user_achievements_are_persisted(db):
     achievements = await analytics_repo.list_user_achievements(db, user.id)
     earned_codes = {item["code"] for item in achievements if item["earned"]}
     assert "first_steps" in earned_codes
-
