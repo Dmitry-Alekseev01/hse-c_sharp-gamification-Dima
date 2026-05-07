@@ -22,11 +22,18 @@ async function authFetch(url, options = {}) {
     ...options.headers,
   };
   const response = await fetch(`${API_BASE_URL}${url}`, { ...options, headers });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Ошибка ${response.status}`);
+  const contentType = response.headers.get('content-type') || '';
+  let payload = null;
+  if (contentType.includes('application/json')) {
+    payload = await response.json().catch(() => null);
   }
-  return response.json();
+  if (!response.ok) {
+    const error = new Error(payload?.detail || `Ошибка ${response.status}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
 }
 
 export const fetchUserProfile = async () => {
@@ -79,9 +86,7 @@ function adaptMaterial(apiMaterial) {
   }
   if (!content_text && apiMaterial.content_text) content_text = apiMaterial.content_text;
   if (!content_url && apiMaterial.content_url) content_url = apiMaterial.content_url;
-
   const tests = (apiMaterial.related_test_ids || []).map((id) => ({ id, title: `Тест #${id}` }));
-
   return {
     id: apiMaterial.id,
     title: apiMaterial.title,

@@ -5,12 +5,12 @@
 }
 
 .test-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  position: relative;
+  background: linear-gradient(135deg, #764ba2 100%);
   border-radius: 16px;
   padding: 30px;
   color: white;
   margin-bottom: 30px;
-  position: relative;
 }
 
 .header-top {
@@ -21,6 +21,7 @@
 }
 
 .back-button {
+  position: static;
   background: rgba(255, 255, 255, 0.2);
   color: white;
   text-decoration: none;
@@ -31,7 +32,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  z-index: 10;
 }
 
 .back-button:hover {
@@ -47,7 +48,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .timer-warning {
@@ -70,9 +70,10 @@
 
 .test-header h1 {
   font-size: 2.5rem;
-  margin: 0 0 25px 0;
+  margin: 0 0 20px 0;
   font-weight: 700;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); /* добавлено для яркости */
+  text-align: center;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .test-meta-info {
