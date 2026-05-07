@@ -51,9 +51,16 @@ const TestDetails = () => {
         });
         setOpenAnswers(initialOpenAnswers);
       } catch (err) {
-        // Если тест уже завершён (409) или другая ошибка
-        if (err.message.includes('409') || err.message.includes('already completed')) {
-          setError('Этот тест уже завершён. Повторное прохождение невозможно.');
+        if (err?.status === 409) {
+          const reason = err?.payload?.block_reason;
+          const reasonMap = {
+            no_attempts: 'Лимит попыток исчерпан.',
+            deadline_passed: 'Дедлайн теста истёк.',
+            time_limit_exceeded: 'Время попытки истекло.',
+            level_locked: 'Недостаточный уровень.',
+            test_unpublished: 'Тест недоступен.',
+          };
+          setError(reasonMap[reason] || err?.payload?.detail || 'Невозможно начать попытку.');
         } else {
           setError(err.message);
         }
@@ -103,6 +110,7 @@ const TestDetails = () => {
       }
       await completeTestAttempt(attemptId);
       setTestSubmitted(true);
+      navigate('/tests');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -147,9 +155,7 @@ const TestDetails = () => {
     <div className="test-details-page">
       <div className="test-header">
         <div className="header-top">
-          <Link to="/tests" className="back-button">
-            Назад к тестам
-          </Link>
+          <Link to="/tests" className="back-button">Назад к тестам</Link>
           {testData.test.time_limit_minutes && !testSubmitted && (
             <div className="timer">{formatTime(timeLeft)}</div>
           )}
@@ -184,9 +190,7 @@ const TestDetails = () => {
           <div className="test-progress">
             <div className="progress-info">
               <span>Прогресс: {calculateProgress()}%</span>
-              <span>
-                Вопрос {currentQuestion + 1} из {totalQuestions}
-              </span>
+              <span>Вопрос {currentQuestion + 1} из {totalQuestions}</span>
             </div>
             <div className="progress-bar">
               <div className="progress-fill" style={{ width: `${calculateProgress()}%` }} />

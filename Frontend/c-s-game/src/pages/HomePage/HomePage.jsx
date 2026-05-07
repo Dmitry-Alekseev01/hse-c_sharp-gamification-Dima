@@ -60,9 +60,9 @@ const Home = () => {
 
         setUserName(profile.full_name || profile.username || dashboard.username || '');
 
-        // Суммируем баллы за последние попытки (из test_results)
+        // Суммируем баллы за последние попытки (используем поле score_value из бэкенда)
         const totalPointsFromLastAttempts = (dashboard.test_results || []).reduce(
-          (sum, test) => sum + (test.user_score || 0),
+          (sum, test) => sum + (test.score_value || 0),
           0
         );
 
