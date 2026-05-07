@@ -219,11 +219,19 @@ async def test_learning_dashboard_aggregates_home_personal_analytics_data(client
     assert in_progress_test["id"] in by_test_id
     assert locked_test["id"] not in by_test_id
 
-    assert by_test_id[completed_test["id"]]["user_status"] == "completed"
+    assert by_test_id[completed_test["id"]]["user_status"] == "not_started"
+    assert by_test_id[completed_test["id"]]["progress_state"] == "completed"
+    assert by_test_id[completed_test["id"]]["attempt_state"] == "can_start"
+    assert by_test_id[completed_test["id"]]["can_start"] is True
+    assert by_test_id[completed_test["id"]]["can_resume"] is False
     assert by_test_id[completed_test["id"]]["score_percent"] == pytest.approx(100.0)
     assert by_test_id[completed_test["id"]]["completed_attempts"] == 1
 
     assert by_test_id[in_progress_test["id"]]["user_status"] == "in_progress"
+    assert by_test_id[in_progress_test["id"]]["progress_state"] == "in_progress"
+    assert by_test_id[in_progress_test["id"]]["attempt_state"] == "can_resume"
+    assert by_test_id[in_progress_test["id"]]["can_start"] is False
+    assert by_test_id[in_progress_test["id"]]["can_resume"] is True
     assert by_test_id[in_progress_test["id"]]["has_active_attempt"] is True
     assert by_test_id[in_progress_test["id"]]["score_percent"] is None
 
@@ -318,3 +326,15 @@ async def test_learning_dashboard_is_cached_between_repeated_requests(client, db
     assert counters["materials"] == 1
     assert counters["tests"] == 1
     assert counters["state_map"] == 1
+
+
+async def test_learning_dashboard_home_alias_returns_same_payload(client, db):
+    student = await seed_user(db, username="dash_alias_student@example.com", password="stud123", role="user")
+    student_token = await login(client, student.username, "stud123")
+
+    canonical = await client.get("/api/v1/analytics/me/learning-dashboard", headers=auth_headers(student_token))
+    assert canonical.status_code == 200, canonical.text
+
+    alias = await client.get("/api/v1/analytics/me/home", headers=auth_headers(student_token))
+    assert alias.status_code == 200, alias.text
+    assert alias.json() == canonical.json()

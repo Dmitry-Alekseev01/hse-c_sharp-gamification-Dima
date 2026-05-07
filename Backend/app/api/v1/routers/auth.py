@@ -1,6 +1,7 @@
 # app/api/v1/routers/auth.py
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -67,6 +68,8 @@ async def register_user(payload: UserCreate, response: Response, db: AsyncSessio
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except IntegrityError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="username already exists") from exc
     _clear_admin_session_cookie(response)
     return user
 

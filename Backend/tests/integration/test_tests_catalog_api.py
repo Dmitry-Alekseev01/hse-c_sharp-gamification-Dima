@@ -196,7 +196,12 @@ async def test_tests_catalog_me_returns_aggregated_states_for_current_user(clien
 
     completed_item = next(item for item in items if item["id"] == completed_test["id"])
     assert completed_item["total_questions"] == 1
-    assert completed_item["user_status"] == "completed"
+    assert completed_item["user_status"] == "not_started"
+    assert completed_item["progress_state"] == "completed"
+    assert completed_item["attempt_state"] == "can_start"
+    assert completed_item["can_start"] is True
+    assert completed_item["can_resume"] is False
+    assert completed_item["block_reason"] is None
     assert completed_item["has_active_attempt"] is False
     assert completed_item["active_attempt_id"] is None
     assert completed_item["completed_attempts"] == 1
@@ -208,6 +213,11 @@ async def test_tests_catalog_me_returns_aggregated_states_for_current_user(clien
     in_progress_item = next(item for item in items if item["id"] == in_progress_test["id"])
     assert in_progress_item["total_questions"] == 1
     assert in_progress_item["user_status"] == "in_progress"
+    assert in_progress_item["progress_state"] == "in_progress"
+    assert in_progress_item["attempt_state"] == "can_resume"
+    assert in_progress_item["can_start"] is False
+    assert in_progress_item["can_resume"] is True
+    assert in_progress_item["block_reason"] is None
     assert in_progress_item["has_active_attempt"] is True
     assert in_progress_item["active_attempt_id"] == active_attempt["id"]
     assert in_progress_item["completed_attempts"] == 0
@@ -218,6 +228,11 @@ async def test_tests_catalog_me_returns_aggregated_states_for_current_user(clien
     not_started_item = next(item for item in items if item["id"] == not_started_test["id"])
     assert not_started_item["total_questions"] == 1
     assert not_started_item["user_status"] == "not_started"
+    assert not_started_item["progress_state"] == "not_started"
+    assert not_started_item["attempt_state"] == "can_start"
+    assert not_started_item["can_start"] is True
+    assert not_started_item["can_resume"] is False
+    assert not_started_item["block_reason"] is None
     assert not_started_item["has_active_attempt"] is False
     assert not_started_item["completed_attempts"] == 0
     assert not_started_item["remaining_attempts"] == 1
@@ -275,6 +290,36 @@ async def test_tests_catalog_me_teacher_can_view_own_unpublished(client, db):
     ids = {item["id"] for item in response.json()}
     assert published["id"] in ids
     assert draft["id"] in ids
+
+
+async def test_tests_page_alias_returns_same_payload_as_catalog(client, db):
+    teacher = await seed_user(db, username="catalog_alias_teacher@example.com", password="teach123", role="teacher")
+    student = await seed_user(db, username="catalog_alias_student@example.com", password="stud123", role="user")
+    teacher_token = await login(client, teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+
+    created_test = await _create_test(
+        client,
+        teacher_token,
+        title="Catalog alias test",
+        max_score=5,
+        max_attempts=2,
+        published=True,
+    )
+    await _create_mcq_question(
+        client,
+        teacher_token,
+        test_id=created_test["id"],
+        text="Catalog alias question",
+        points=1.0,
+    )
+
+    canonical = await client.get("/api/v1/tests/catalog/me", headers=auth_headers(student_token))
+    assert canonical.status_code == 200, canonical.text
+
+    alias = await client.get("/api/v1/tests/page/me", headers=auth_headers(student_token))
+    assert alias.status_code == 200, alias.text
+    assert alias.json() == canonical.json()
 
 
 async def test_tests_catalog_me_reuses_cache_for_repeat_requests(client, db, monkeypatch):

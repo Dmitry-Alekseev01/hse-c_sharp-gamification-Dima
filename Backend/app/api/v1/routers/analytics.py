@@ -19,6 +19,7 @@ from app.cache.redis_cache import (
     cache_key_learning_dashboard,
     cache_key_learning_dashboard_stale,
     cache_key_user_progress,
+    get_user_attempts_state_version,
     cache_key_leaderboard_page,
     get,
     get_cache_namespace_version,
@@ -163,12 +164,14 @@ async def get_my_learning_dashboard(
     tests_version = await get_cache_namespace_version(NS_TESTS)
     materials_version = await get_cache_namespace_version(NS_MATERIALS)
     summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+    attempts_version = await get_user_attempts_state_version(current_user.id)
     cache_key = cache_key_learning_dashboard(
         user_id=current_user.id,
         limit=limit,
         tests_version=tests_version,
         materials_version=materials_version,
         summary_version=summary_version,
+        attempts_version=attempts_version,
     )
     stale_cache_key = cache_key_learning_dashboard_stale(user_id=current_user.id, limit=limit)
     stale_ttl = max(LEARNING_DASHBOARD_TTL * 6, 600)
@@ -206,6 +209,11 @@ async def get_my_learning_dashboard(
         for test in tests:
             state = state_map.get(test.id, {})
             user_status = str(state.get("user_status", "not_started"))
+            progress_state = str(state.get("progress_state", user_status))
+            attempt_state = str(state.get("attempt_state", "can_start"))
+            can_start = bool(state.get("can_start", True))
+            can_resume = bool(state.get("can_resume", False))
+            block_reason = state.get("block_reason")
             completed_attempts = int(state.get("completed_attempts", 0))
             remaining_attempts = int(state.get("remaining_attempts", max(int(test.max_attempts or 1), 1)))
             has_active_attempt = bool(state.get("has_active_attempt", False))
@@ -220,7 +228,7 @@ async def get_my_learning_dashboard(
                 score_sum += float(score_percent)
                 tests_with_score += 1
 
-            if user_status == "completed":
+            if completed_attempts > 0:
                 completed_tests += 1
 
             test_results.append(
@@ -229,6 +237,11 @@ async def get_my_learning_dashboard(
                     "title": test.title,
                     "deadline": test.deadline,
                     "user_status": user_status,
+                    "progress_state": progress_state,
+                    "attempt_state": attempt_state,
+                    "can_start": can_start,
+                    "can_resume": can_resume,
+                    "block_reason": block_reason,
                     "has_active_attempt": has_active_attempt,
                     "completed_attempts": completed_attempts,
                     "remaining_attempts": remaining_attempts,
@@ -293,6 +306,23 @@ async def get_my_learning_dashboard(
         await set(cache_key, payload, ttl=LEARNING_DASHBOARD_TTL)
         await set(stale_cache_key, payload, ttl=stale_ttl)
         return payload
+
+
+@router.get("/me/home", response_model=LearningDashboardRead, status_code=status.HTTP_200_OK)
+async def get_my_home_dashboard(
+    limit: int = Query(200, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Screen-oriented alias for homepage dashboard payload.
+    Returns the same payload as /analytics/me/learning-dashboard.
+    """
+    return await get_my_learning_dashboard(
+        limit=limit,
+        db=db,
+        current_user=current_user,
+    )
 
 
 @router.get("/me/achievements", response_model=List[UserAchievementRead], status_code=status.HTTP_200_OK)
@@ -669,6 +699,8 @@ async def create_challenge(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except IntegrityError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Challenge code already exists") from exc
     return challenge
 
 
@@ -863,15 +895,18 @@ async def create_season(
     existing = await season_repo.get_season_by_code(db, payload.code)
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Season code already exists")
-    season = await season_repo.create_season(
-        db,
-        code=payload.code,
-        title=payload.title,
-        starts_at=starts_at,
-        ends_at=ends_at,
-        is_active=payload.is_active,
-        created_by=current_user.id,
-    )
+    try:
+        season = await season_repo.create_season(
+            db,
+            code=payload.code,
+            title=payload.title,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            is_active=payload.is_active,
+            created_by=current_user.id,
+        )
+    except IntegrityError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Season code already exists") from exc
     return season
 
 

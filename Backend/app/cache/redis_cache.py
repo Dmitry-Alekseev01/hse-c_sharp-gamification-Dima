@@ -39,6 +39,10 @@ def _namespace_key(namespace: str) -> str:
     return f"cache:ns:{namespace}"
 
 
+def _user_attempts_state_key(user_id: int) -> str:
+    return f"cache:user-attempts-state:{user_id}"
+
+
 async def get_cache_namespace_version(namespace: str) -> int:
     r = get_redis_client()
     raw = await r.get(_namespace_key(namespace))
@@ -57,6 +61,21 @@ async def bump_cache_namespace(*namespaces: str) -> None:
     for namespace in names:
         pipe.incr(_namespace_key(namespace))
     await pipe.execute()
+
+
+async def get_user_attempts_state_version(user_id: int) -> int:
+    r = get_redis_client()
+    raw = await r.get(_user_attempts_state_key(user_id))
+    try:
+        return int(raw) if raw is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+async def bump_user_attempts_state_version(user_id: int) -> int:
+    r = get_redis_client()
+    value = await r.incr(_user_attempts_state_key(user_id))
+    return int(value)
 
 async def initialize():
     r = get_redis_client()
@@ -173,8 +192,12 @@ def cache_key_tests_catalog_me(
     limit: int,
     tests_version: int = 0,
     summary_version: int = 0,
+    attempts_version: int = 0,
 ) -> str:
-    return f"tests:catalog:me:v{tests_version}:s{summary_version}:u{user_id}:p{int(published_only)}:l{limit}"
+    return (
+        f"tests:catalog:me:v{tests_version}:s{summary_version}:a{attempts_version}:"
+        f"u{user_id}:p{int(published_only)}:l{limit}"
+    )
 
 
 def cache_key_learning_dashboard(
@@ -184,9 +207,10 @@ def cache_key_learning_dashboard(
     tests_version: int = 0,
     materials_version: int = 0,
     summary_version: int = 0,
+    attempts_version: int = 0,
 ) -> str:
     return (
-        f"analytics:learning-dashboard:v{tests_version}:m{materials_version}:s{summary_version}:"
+        f"analytics:learning-dashboard:v{tests_version}:m{materials_version}:s{summary_version}:a{attempts_version}:"
         f"u{user_id}:l{limit}"
     )
 

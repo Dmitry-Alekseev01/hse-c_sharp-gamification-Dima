@@ -209,6 +209,20 @@ components:
               type: string
               enum: [not_started, in_progress, completed]
               default: not_started
+            progress_state:
+              type: string
+              enum: [not_started, in_progress, completed]
+              default: not_started
+            attempt_state:
+              type: string
+              enum: [can_start, can_resume, blocked]
+              default: can_start
+            can_start: { type: boolean, default: true }
+            can_resume: { type: boolean, default: false }
+            block_reason:
+              type: string
+              nullable: true
+              enum: [no_attempts, deadline_passed, time_limit_exceeded, level_locked, test_unpublished]
             has_active_attempt: { type: boolean, default: false }
             active_attempt_id: { type: integer, nullable: true }
             completed_attempts: { type: integer, default: 0 }
@@ -275,6 +289,18 @@ components:
         user_status:
           type: string
           enum: [not_started, in_progress, completed]
+        progress_state:
+          type: string
+          enum: [not_started, in_progress, completed]
+        attempt_state:
+          type: string
+          enum: [can_start, can_resume, blocked]
+        can_start: { type: boolean }
+        can_resume: { type: boolean }
+        block_reason:
+          type: string
+          nullable: true
+          enum: [no_attempts, deadline_passed, time_limit_exceeded, level_locked, test_unpublished]
         has_active_attempt: { type: boolean }
         completed_attempts: { type: integer }
         remaining_attempts: { type: integer }
@@ -600,6 +626,65 @@ components:
         completed_attempts: { type: integer }
         remaining_attempts: { type: integer }
         has_active_attempt: { type: boolean }
+        progress_state:
+          type: string
+          enum: [not_started, in_progress, completed]
+        attempt_state:
+          type: string
+          enum: [can_start, can_resume, blocked]
+        can_start: { type: boolean }
+        can_resume: { type: boolean }
+        block_reason:
+          type: string
+          nullable: true
+          enum: [no_attempts, deadline_passed, time_limit_exceeded, level_locked, test_unpublished]
+
+    TestAttemptStartRead:
+      allOf:
+        - $ref: '#/components/schemas/TestAttemptRead'
+        - type: object
+          properties:
+            action:
+              type: string
+              enum: [started, resumed]
+            max_attempts: { type: integer }
+            completed_attempts: { type: integer }
+            remaining_attempts: { type: integer }
+            has_active_attempt: { type: boolean }
+            progress_state:
+              type: string
+              enum: [not_started, in_progress, completed]
+            attempt_state:
+              type: string
+              enum: [can_start, can_resume, blocked]
+            can_start: { type: boolean }
+            can_resume: { type: boolean }
+            block_reason:
+              type: string
+              nullable: true
+              enum: [no_attempts, deadline_passed, time_limit_exceeded, level_locked, test_unpublished]
+
+    TestAttemptStartConflictRead:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            block_reason:
+              type: string
+              nullable: true
+              enum: [no_attempts, deadline_passed, time_limit_exceeded, level_locked, test_unpublished]
+            progress_state:
+              type: string
+              enum: [not_started, in_progress, completed]
+            attempt_state:
+              type: string
+              enum: [can_start, can_resume, blocked]
+            can_start: { type: boolean }
+            can_resume: { type: boolean }
+            max_attempts: { type: integer }
+            completed_attempts: { type: integer }
+            remaining_attempts: { type: integer }
+            has_active_attempt: { type: boolean }
 
     TestAttemptStateRead:
       type: object
@@ -1128,7 +1213,11 @@ paths:
   /api/v1/tests:
     get:
       summary: List tests, published only by default
-      description: For regular users published tests are additionally filtered by required level.
+      description: >
+        For regular users published tests are additionally filtered by required level.
+        This is a base test list endpoint.
+        For tests page cards with user status/attempts/scores use `/api/v1/tests/catalog/me`
+        (or its screen alias `/api/v1/tests/page/me`) to avoid per-test fan-out.
       responses:
         '200':
           content:
@@ -1153,8 +1242,33 @@ paths:
     get:
       summary: Tests catalog for current user with aggregated per-test state
       description: >
-        Returns test cards with attempt/score state in one call.
+        Returns test cards with attempt/score/actionability state in one call.
+        Use `attempt_state`, `can_start`, `can_resume`, and `block_reason` as source of truth for UI actions.
         Recommended for tests list/home widgets where per-test status is needed.
+      parameters:
+        - in: query
+          name: published_only
+          required: false
+          schema: { type: boolean, default: true }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, default: 100 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TestCardRead' }
+        '403': { description: Regular users cannot request published_only=false }
+
+  /api/v1/tests/page/me:
+    get:
+      summary: Screen alias for tests page cards (same payload as /tests/catalog/me)
+      description: >
+        Alias endpoint for frontend tests page integration.
+        Returns the same aggregated test-card payload as `/api/v1/tests/catalog/me`.
       parameters:
         - in: query
           name: published_only
@@ -1233,22 +1347,21 @@ paths:
 
   /api/v1/tests/{test_id}/attempts/start:
     post:
-      summary: Start attempt or return active one
+      summary: Start attempt or resume active one
       description: >
-        Canonical endpoint for both first start and re-take. There is no dedicated restart endpoint.
-        Behavior:
-        1) if active attempt exists and is valid -> returns the same active attempt;
-        2) if no active attempt and quota allows -> creates a new attempt;
-        3) if active attempt is already expired by deadline/time limit -> auto-finalizes it and returns 409;
-        repeating the call after that may start a new attempt if quota remains.
-        One active attempt per test. Re-taking completed test is allowed until max_attempts is exhausted.
-        Locked tests are inaccessible for regular users until their level is high enough.
+        Canonical endpoint for first start, resume, and re-take.
+        Response includes `action` plus current attempt-quota snapshot so frontend does not need extra calls.
+        There is no dedicated restart endpoint.
       responses:
         '201':
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/TestAttemptRead' }
-        '409': { description: Deadline passed, time limit exceeded, or no attempts left }
+              schema: { $ref: '#/components/schemas/TestAttemptStartRead' }
+        '409':
+          description: Attempt cannot be started right now (deadline/time limit/quota policy).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestAttemptStartConflictRead' }
 
   /api/v1/tests/{test_id}/attempts/me:
     get:
@@ -1265,8 +1378,9 @@ paths:
     get:
       summary: Current user quota for test attempts
       description: >
-        `remaining_attempts = max_attempts - completed_attempts`.
-        Active in-progress attempt does not decrement remaining_attempts and is exposed via has_active_attempt=true.
+        Single-source state for "can start / can resume / blocked":
+        `remaining_attempts = max_attempts - completed_attempts`,
+        active in-progress attempt does not decrement remaining attempts.
       responses:
         '200':
           content:
@@ -1392,6 +1506,10 @@ paths:
   /api/v1/answers/test/{test_id}:
     get:
       summary: Answers for test
+      description: >
+        Returns answer rows for one test.
+        Do not use this endpoint in N-per-test loops for tests page cards; prefer
+        `/api/v1/tests/catalog/me` (or `/api/v1/tests/page/me`) for aggregated state.
       responses:
         '200':
           content:
@@ -1494,6 +1612,9 @@ paths:
   /api/v1/analytics/user/{user_id}/progress:
     get:
       summary: Gamification progress for user
+      description: >
+        Detailed progress payload for one user (self/teacher/admin access rules apply).
+        For homepage widgets use `/api/v1/analytics/me/learning-dashboard` (or `/api/v1/analytics/me/home`).
       responses:
         '200':
           content:
@@ -1504,6 +1625,23 @@ paths:
     get:
       summary: Aggregated learning dashboard for current user (home/personal/analytics screens)
       description: Primary endpoint for homepage dashboard widgets and summary metrics.
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearningDashboardRead' }
+
+  /api/v1/analytics/me/home:
+    get:
+      summary: Screen alias for homepage dashboard (same payload as /analytics/me/learning-dashboard)
+      description: >
+        Alias endpoint for frontend home page integration.
+        Returns the same aggregated payload as `/api/v1/analytics/me/learning-dashboard`.
       parameters:
         - in: query
           name: limit

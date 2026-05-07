@@ -1,6 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -42,6 +43,8 @@ async def create_user(
     except ValueError as e:
         # service may raise ValueError for validation (e.g. username exists)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except IntegrityError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="username already exists") from e
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user")
     return user

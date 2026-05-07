@@ -9,7 +9,9 @@ from app.services.challenge_service import ChallengeEventType, record_event
 
 
 class AttemptPolicyError(ValueError):
-    pass
+    def __init__(self, message: str, *, code: str):
+        super().__init__(message)
+        self.code = code
 
 
 def _is_active_attempt_unique_violation(exc: IntegrityError) -> bool:
@@ -65,46 +67,54 @@ async def finalize_attempt_if_expired(session, test: Test, attempt: TestAttempt)
 
 
 async def resolve_attempt_for_user(session, test: Test, user_id: int, attempt_id: int | None = None) -> TestAttempt:
+    test_id = int(test.id)
+
     if is_deadline_passed(test):
-        raise AttemptPolicyError("Test deadline has passed")
+        raise AttemptPolicyError("Test deadline has passed", code="deadline_passed")
 
     if attempt_id is not None:
         attempt = await test_attempt_repo.get_attempt(session, attempt_id)
         if attempt is None:
             raise LookupError("Attempt not found")
         if attempt.user_id != user_id or attempt.test_id != test.id:
-            raise AttemptPolicyError("Attempt does not belong to the specified user/test")
+            raise AttemptPolicyError(
+                "Attempt does not belong to the specified user/test",
+                code="attempt_mismatch",
+            )
         if attempt.status == "completed":
-            raise AttemptPolicyError("Attempt is already completed")
+            raise AttemptPolicyError("Attempt is already completed", code="attempt_completed")
         _, reason = await finalize_attempt_if_expired(session, test, attempt)
         if reason == "deadline":
-            raise AttemptPolicyError("Test deadline has passed")
+            raise AttemptPolicyError("Test deadline has passed", code="deadline_passed")
         if reason == "time_limit":
-            raise AttemptPolicyError("Attempt time limit has been exceeded")
+            raise AttemptPolicyError("Attempt time limit has been exceeded", code="time_limit_exceeded")
         return attempt
 
-    active_attempt = await test_attempt_repo.get_active_attempt(session, user_id, test.id)
+    active_attempt = await test_attempt_repo.get_active_attempt(session, user_id, test_id)
     if active_attempt is not None:
         _, reason = await finalize_attempt_if_expired(session, test, active_attempt)
         if reason == "deadline":
-            raise AttemptPolicyError("Test deadline has passed")
+            raise AttemptPolicyError("Test deadline has passed", code="deadline_passed")
         if reason == "time_limit":
-            raise AttemptPolicyError("Attempt time limit has been exceeded")
+            raise AttemptPolicyError("Attempt time limit has been exceeded", code="time_limit_exceeded")
         return active_attempt
 
     max_attempts = int(test.max_attempts or 1)
-    completed_attempts = await test_attempt_repo.count_completed_attempts_for_user_test(session, user_id, test.id)
+    completed_attempts = await test_attempt_repo.count_completed_attempts_for_user_test(session, user_id, test_id)
     if completed_attempts >= max(max_attempts, 1):
-        raise AttemptPolicyError("No attempts remaining for this test")
+        raise AttemptPolicyError(
+            f"No attempts remaining for this test (completed_attempts={completed_attempts}, max_attempts={max_attempts})",
+            code="no_attempts",
+        )
 
     try:
-        return await test_attempt_repo.create_attempt(session, user_id, test.id)
+        return await test_attempt_repo.create_attempt(session, user_id, test_id)
     except IntegrityError as exc:
         if not _is_active_attempt_unique_violation(exc):
             raise
         # Race condition: another request created an in-progress attempt first.
         await session.rollback()
-        active_attempt = await test_attempt_repo.get_active_attempt(session, user_id, test.id)
+        active_attempt = await test_attempt_repo.get_active_attempt(session, user_id, test_id)
         if active_attempt is not None:
             return active_attempt
         raise
