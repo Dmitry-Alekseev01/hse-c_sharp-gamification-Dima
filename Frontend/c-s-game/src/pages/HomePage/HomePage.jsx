@@ -1,11 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  fetchUserProfile,
-  getToken,
-  fetchLearningDashboard,
-  fetchLevels,
-} from '../../api/api';
+import { getToken, fetchLearningDashboard, fetchLevels, fetchUserProfile } from '../../api/api';
 import './HomePage.css';
 
 const Home = () => {
@@ -26,42 +21,35 @@ const Home = () => {
   const [activeTab, setActiveTab] = useState('roadmap');
   const [activeFilter, setActiveFilter] = useState('all');
 
-  const getAverageScoreIn10Scale = (percent) =>
-    percent !== undefined ? (percent / 10).toFixed(1) : '—';
-
-  const formatShortDate = (dateString) => {
-    if (!dateString) return '';
-    return new Date(dateString).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
-  };
-
-  const getPriorityClass = (daysLeft) => {
-    if (daysLeft <= 3) return 'priority-high';
-    if (daysLeft <= 7) return 'priority-medium';
-    return 'priority-low';
-  };
-
-  const getFilteredDeadlines = () => {
-    if (activeFilter === 'all') return deadlines;
-    return deadlines.filter((item) => item.type === activeFilter);
-  };
+  const getAverageScoreIn10Scale = (p) => (p !== undefined ? (p / 10).toFixed(1) : '—');
+  const formatShortDate = (s) =>
+    s ? new Date(s).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '';
+  const getPriorityClass = (d) =>
+    d <= 3 ? 'priority-high' : d <= 7 ? 'priority-medium' : 'priority-low';
+  const getFilteredDeadlines = () =>
+    activeFilter === 'all' ? deadlines : deadlines.filter((i) => i.type === activeFilter);
 
   useEffect(() => {
-    const loadHomeData = async () => {
+    const load = async () => {
       if (!getToken()) {
         setLoading(false);
         return;
       }
       try {
+        // Загружаем профиль, дашборд и уровни параллельно
         const [profile, dashboard, levelsData] = await Promise.all([
           fetchUserProfile(),
           fetchLearningDashboard(200),
           fetchLevels(),
         ]);
 
-        setUserName(profile.full_name || profile.username || dashboard.username || '');
+        // Имя пользователя: приоритет – full_name из профиля, затем username, затем из дашборда
+        const displayName =
+          profile?.full_name || profile?.username || dashboard?.username || 'Гость';
+        setUserName(displayName);
 
-        // Суммируем баллы за последние попытки (используем поле score_value из бэкенда)
-        const totalPointsFromLastAttempts = (dashboard.test_results || []).reduce(
+        // Суммируем баллы за последние попытки – используем поле score_value (бэкенд)
+        const totalPoints = (dashboard.test_results || []).reduce(
           (sum, test) => sum + (test.score_value || 0),
           0
         );
@@ -70,7 +58,7 @@ const Home = () => {
           totalTests: dashboard.total_tests || 0,
           completedTests: dashboard.completed_tests || 0,
           averageScore: Math.round(dashboard.average_score_percent || 0),
-          totalPoints: totalPointsFromLastAttempts,
+          totalPoints,
           streakDays: dashboard.streak_days || 0,
           totalMaterials: dashboard.total_materials || 0,
         });
@@ -80,10 +68,9 @@ const Home = () => {
 
         const now = new Date();
         const deadlinesList = (dashboard.test_results || [])
-          .filter((t) => Boolean(t.deadline))
+          .filter((t) => t.deadline)
           .map((t) => {
-            const deadlineDate = new Date(t.deadline);
-            const daysLeft = Math.ceil((deadlineDate - now) / (1000 * 60 * 60 * 24));
+            const daysLeft = Math.ceil((new Date(t.deadline) - now) / (1000 * 60 * 60 * 24));
             return {
               id: t.test_id,
               title: t.title,
@@ -100,7 +87,7 @@ const Home = () => {
         setLoading(false);
       }
     };
-    loadHomeData();
+    load();
   }, []);
 
   if (loading) return <div className="loading">Загрузка...</div>;
@@ -116,7 +103,7 @@ const Home = () => {
     <div className="home-page">
       <div className="welcome-section">
         <div className="welcome-content">
-          <h1>Добро пожаловать, {userName || 'Гость'}!</h1>
+          <h1>Добро пожаловать, {userName}!</h1>
           <p className="welcome-subtitle">
             Продолжайте изучать веб-разработку. Сегодня отличный день для обучения!
           </p>
@@ -129,7 +116,9 @@ const Home = () => {
             </div>
             <div className="stat-card">
               <div className="stat-info">
-                <div className="stat-value">{stats.completedTests}/{stats.totalTests}</div>
+                <div className="stat-value">
+                  {stats.completedTests}/{stats.totalTests}
+                </div>
                 <div className="stat-label">Тестов пройдено</div>
               </div>
             </div>
@@ -176,7 +165,6 @@ const Home = () => {
         </button>
       </div>
 
-      {/* Дорожная карта */}
       <div className="tab-content">
         {activeTab === 'roadmap' && (
           <div className="roadmap-section">
@@ -185,7 +173,7 @@ const Home = () => {
               <p>Нет данных о уровнях</p>
             ) : (
               <div className="roadmap-timeline">
-                {levels.map((level, index) => {
+                {levels.map((level, idx) => {
                   const isCompleted =
                     currentLevel && level.required_points <= currentLevel.required_points;
                   const isCurrent = currentLevel && level.id === currentLevel.id;
@@ -195,7 +183,7 @@ const Home = () => {
                       className={`roadmap-item ${isCompleted ? 'completed' : isCurrent ? 'in_progress' : 'pending'}`}
                     >
                       <div className="roadmap-marker">
-                        {index < levels.length - 1 && <div className="timeline-line"></div>}
+                        {idx < levels.length - 1 && <div className="timeline-line"></div>}
                       </div>
                       <div className="roadmap-content">
                         <div className="roadmap-header">
@@ -224,7 +212,6 @@ const Home = () => {
           </div>
         )}
 
-        {/* Дедлайны */}
         {activeTab === 'deadlines' && (
           <div className="deadlines-section">
             <h2 className="section-title">Ближайшие дедлайны</h2>
@@ -287,7 +274,6 @@ const Home = () => {
           </div>
         )}
 
-        {/* Прогресс */}
         {activeTab === 'progress' && (
           <div className="progress-section">
             <h2 className="section-title">Ваш прогресс обучения</h2>
@@ -347,13 +333,22 @@ const Home = () => {
         <h2 className="section-title">Быстрые действия</h2>
         <div className="actions-grid">
           <Link to="/tests" className="action-card">
-            <div className="action-content"><h3>Продолжить тест</h3><p>Проверьте свои знания</p></div>
+            <div className="action-content">
+              <h3>Продолжить тест</h3>
+              <p>Проверьте свои знания</p>
+            </div>
           </Link>
           <Link to="/materials" className="action-card">
-            <div className="action-content"><h3>Новые материалы</h3><p>Изучайте теорию</p></div>
+            <div className="action-content">
+              <h3>Новые материалы</h3>
+              <p>Изучайте теорию</p>
+            </div>
           </Link>
           <Link to="/analytics" className="action-card">
-            <div className="action-content"><h3>Аналитика</h3><p>Посмотрите прогресс</p></div>
+            <div className="action-content">
+              <h3>Аналитика</h3>
+              <p>Посмотрите прогресс</p>
+            </div>
           </Link>
         </div>
       </div>

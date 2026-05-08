@@ -27,14 +27,12 @@ const Layout = () => {
 
   return (
     <div className="App">
-      {/* Навбар не показывается на страницах авторизации */}
       {!shouldHideLayout && <Navbar />}
 
       <div className="main-content">
         <AppRoutes />
       </div>
 
-      {/* Футер тоже можно скрыть (опционально) */}
       {!shouldHideLayout && <Footer />}
     </div>
   );
