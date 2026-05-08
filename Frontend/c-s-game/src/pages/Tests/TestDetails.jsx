@@ -51,16 +51,8 @@ const TestDetails = () => {
         });
         setOpenAnswers(initialOpenAnswers);
       } catch (err) {
-        if (err?.status === 409) {
-          const reason = err?.payload?.block_reason;
-          const reasonMap = {
-            no_attempts: 'Лимит попыток исчерпан.',
-            deadline_passed: 'Дедлайн теста истёк.',
-            time_limit_exceeded: 'Время попытки истекло.',
-            level_locked: 'Недостаточный уровень.',
-            test_unpublished: 'Тест недоступен.',
-          };
-          setError(reasonMap[reason] || err?.payload?.detail || 'Невозможно начать попытку.');
+        if (err.message.includes('409') || err.message.includes('already completed')) {
+          setError('Этот тест уже завершён. Повторное прохождение невозможно.');
         } else {
           setError(err.message);
         }
@@ -91,8 +83,21 @@ const TestDetails = () => {
     setOpenAnswers((prev) => ({ ...prev, [questionId]: value }));
   };
 
+  const isAllQuestionsAnswered = () => {
+    if (!testData) return false;
+    const totalQuestions = testData.questions.length;
+    const answered =
+      Object.values(userAnswers).filter((a) => a !== null).length +
+      Object.values(openAnswers).filter((a) => a.trim() !== '').length;
+    return answered === totalQuestions;
+  };
+
   const handleSubmitTest = async () => {
     if (isSubmitting) return;
+    if (!isAllQuestionsAnswered()) {
+      setError('Пожалуйста, ответьте на все вопросы перед отправкой.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const allAnswers = [
@@ -110,7 +115,6 @@ const TestDetails = () => {
       }
       await completeTestAttempt(attemptId);
       setTestSubmitted(true);
-      navigate('/tests');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -150,12 +154,15 @@ const TestDetails = () => {
   if (!testData) return null;
 
   const totalQuestions = testData.questions.length;
+  const allAnswered = isAllQuestionsAnswered();
 
   return (
     <div className="test-details-page">
       <div className="test-header">
         <div className="header-top">
-          <Link to="/tests" className="back-button">Назад к тестам</Link>
+          <Link to="/tests" className="back-button">
+            Назад к тестам
+          </Link>
           {testData.test.time_limit_minutes && !testSubmitted && (
             <div className="timer">{formatTime(timeLeft)}</div>
           )}
@@ -190,7 +197,9 @@ const TestDetails = () => {
           <div className="test-progress">
             <div className="progress-info">
               <span>Прогресс: {calculateProgress()}%</span>
-              <span>Вопрос {currentQuestion + 1} из {totalQuestions}</span>
+              <span>
+                Вопрос {currentQuestion + 1} из {totalQuestions}
+              </span>
             </div>
             <div className="progress-bar">
               <div className="progress-fill" style={{ width: `${calculateProgress()}%` }} />
@@ -219,7 +228,7 @@ const TestDetails = () => {
               <button
                 className="submit-btn-sidebar"
                 onClick={handleSubmitTest}
-                disabled={isSubmitting}
+                disabled={!allAnswered || isSubmitting}
               >
                 {isSubmitting ? 'Отправка...' : 'Отправить тест на проверку'}
               </button>
@@ -322,7 +331,7 @@ const TestDetails = () => {
       ) : (
         <div className="test-results">
           <div className="results-header">
-            <h2>🎉 Тест завершен!</h2>
+            <h2>Тест завершен!</h2>
             <p>Ваши ответы отправлены на проверку.</p>
           </div>
           <div className="results-actions">

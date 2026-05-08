@@ -211,14 +211,14 @@
   padding: 30px;
   background: white;
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  /* box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); */
 }
 
 .stat-item {
   text-align: center;
   padding: 20px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  background: linear-gradient(135deg, #f5f7fa 100%);
 }
 
 .stat-number {
