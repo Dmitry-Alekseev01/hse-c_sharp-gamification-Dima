@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import CheckConstraint, Column, Integer, String, Text, DateTime, ForeignKey, JSON, func
 from sqlalchemy.orm import relationship
 
@@ -65,3 +67,12 @@ class AIGamificationJob(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     creator = relationship("User", lazy="selectin")
+
+    @property
+    def draft_preview_text(self) -> str | None:
+        if not isinstance(self.draft_json, dict):
+            return None
+        try:
+            return json.dumps(self.draft_json, ensure_ascii=False, indent=2)
+        except Exception:
+            return str(self.draft_json)

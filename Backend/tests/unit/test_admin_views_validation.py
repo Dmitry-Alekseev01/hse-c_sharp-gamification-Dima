@@ -4,6 +4,7 @@ import pytest
 from starlette_admin.exceptions import FormValidationError
 
 from app.admin.views import (
+    AIGamificationJobReadOnlyView,
     AchievementDefinitionAdminView,
     ChallengeAdminView,
     ChoiceAdminView,
@@ -17,6 +18,7 @@ from app.admin.views import (
     TestAdminView as _TestAdminView,
     UnlockRuleAdminView,
 )
+from app.models.ai_gamification_job import AIGamificationJob
 from app.core.security import get_password_hash
 from app.core.material_taxonomy import (
     AttachmentKind,
@@ -316,6 +318,36 @@ async def test_group_membership_admin_view_validate_accepts_relation_payload():
     await view.validate(None, {"group": {"id": 1}, "user": {"id": 2}})
 
 
+async def test_ai_job_admin_view_build_payload_accepts_placeholder_constraints_object():
+    view = AIGamificationJobReadOnlyView(AIGamificationJob)
+
+    payload = view._build_create_payload(
+        {
+            "source_type": "material",
+            "source_id": 1,
+            "language": "ru",
+            "constraints_json": {"": ""},
+        }
+    )
+
+    assert list(payload.constraints or []) == []
+
+
+async def test_ai_job_admin_view_build_payload_accepts_items_wrapped_constraints():
+    view = AIGamificationJobReadOnlyView(AIGamificationJob)
+
+    payload = view._build_create_payload(
+        {
+            "source_type": "question",
+            "source_id": 2,
+            "language": "ru",
+            "constraints_json": {"items": ["short cards", "anime tone"]},
+        }
+    )
+
+    assert list(payload.constraints or []) == ["short cards", "anime tone"]
+
+
 class _DummyTeacherRequest:
     def __init__(self, *, db, teacher_id: int):
         self.session = {
@@ -340,6 +372,146 @@ class _DummyAdminRequest:
             admin_user=SimpleNamespace(id=user_id, username=f"admin{user_id}@example.com"),
             session=db,
         )
+
+
+class _DummyActionRequest:
+    def __init__(self, *, user_id: int, form_data: dict[str, str]):
+        self.session = {
+            "admin_role": "admin",
+            "admin_user_id": user_id,
+            "admin_username": f"admin{user_id}@example.com",
+        }
+        # Emulate sync Starlette-Admin session object in request.state.session.
+        self.state = SimpleNamespace(admin_user=None, session=object())
+        self._form_data = form_data
+
+    async def form(self):
+        return self._form_data
+
+
+class _FakeScalarResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
+class _FakeAsyncSessionCtx:
+    def __init__(self, user):
+        self._user = user
+        self.committed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def execute(self, stmt):
+        del stmt
+        return _FakeScalarResult(self._user)
+
+    async def commit(self):
+        self.committed = True
+
+
+async def test_ai_job_admin_apply_row_action_works_with_sync_request_session(monkeypatch):
+    admin = SimpleNamespace(id=101, role="admin", username="admin101@example.com")
+
+    captured: dict[str, object] = {}
+
+    async def _fake_get_job_for_user(session, job_id: int, current_user):
+        captured["job_id"] = job_id
+        captured["current_user_id"] = current_user.id
+        captured["session_type"] = type(session).__name__
+        return object()
+
+    async def _fake_apply_job_draft(session, *, job_id: int, payload, current_user):
+        captured["apply_job_id"] = job_id
+        captured["target_id"] = payload.target_id
+        captured["target_type"] = payload.target_type.value
+        captured["apply_user_id"] = current_user.id
+        return {"job_id": job_id, "status": "applied", "updated_entity": {"type": payload.target_type.value, "id": payload.target_id}}
+
+    monkeypatch.setattr("app.admin.views_gamification.AsyncSessionLocal", lambda: _FakeAsyncSessionCtx(admin))
+    monkeypatch.setattr("app.admin.views_gamification.get_job_for_user", _fake_get_job_for_user)
+    monkeypatch.setattr("app.admin.views_gamification.apply_job_draft", _fake_apply_job_draft)
+
+    view = AIGamificationJobReadOnlyView(AIGamificationJob)
+    request = _DummyActionRequest(
+        user_id=admin.id,
+        form_data={"target_type": "question", "target_id": "112", "apply_mode": "append"},
+    )
+
+    message = await view.apply_draft_row_action(request, pk="6")
+
+    assert message == "AI job #6 applied to question #112"
+    assert captured["job_id"] == 6
+    assert captured["apply_job_id"] == 6
+    assert captured["target_id"] == 112
+    assert captured["target_type"] == "question"
+    assert captured["current_user_id"] == admin.id
+    assert captured["apply_user_id"] == admin.id
+
+
+async def test_ai_job_admin_apply_row_action_accepts_auto_target(monkeypatch):
+    admin = SimpleNamespace(id=303, role="admin", username="admin303@example.com")
+
+    captured: dict[str, object] = {}
+
+    async def _fake_get_job_for_user(session, job_id: int, current_user):
+        del session
+        captured["job_id"] = job_id
+        captured["current_user_id"] = current_user.id
+        return object()
+
+    async def _fake_apply_job_draft(session, *, job_id: int, payload, current_user):
+        del session
+        captured["payload_target_type"] = payload.target_type
+        captured["payload_target_id"] = payload.target_id
+        captured["apply_user_id"] = current_user.id
+        return {"job_id": job_id, "status": "applied", "updated_entity": {"type": "question", "id": 112}}
+
+    monkeypatch.setattr("app.admin.views_gamification.AsyncSessionLocal", lambda: _FakeAsyncSessionCtx(admin))
+    monkeypatch.setattr("app.admin.views_gamification.get_job_for_user", _fake_get_job_for_user)
+    monkeypatch.setattr("app.admin.views_gamification.apply_job_draft", _fake_apply_job_draft)
+
+    view = AIGamificationJobReadOnlyView(AIGamificationJob)
+    request = _DummyActionRequest(user_id=admin.id, form_data={"target_type": "", "target_id": "", "apply_mode": "append"})
+
+    message = await view.apply_draft_row_action(request, pk="6")
+
+    assert message == "AI job #6 applied to question #112"
+    assert captured["job_id"] == 6
+    assert captured["current_user_id"] == admin.id
+    assert captured["apply_user_id"] == admin.id
+    assert captured["payload_target_type"] is None
+    assert captured["payload_target_id"] is None
+
+
+async def test_ai_job_admin_retry_row_action_works_with_sync_request_session(monkeypatch):
+    admin = SimpleNamespace(id=202, role="admin", username="admin202@example.com")
+
+    captured: dict[str, object] = {}
+
+    async def _fake_retry(session, *, job_id: int, current_user):
+        captured["job_id"] = job_id
+        captured["current_user_id"] = current_user.id
+        captured["session_type"] = type(session).__name__
+        return {"job_id": job_id, "status": "pending"}
+
+    monkeypatch.setattr("app.admin.views_gamification.AsyncSessionLocal", lambda: _FakeAsyncSessionCtx(admin))
+    monkeypatch.setattr("app.admin.views_gamification.retry_ai_gamification_job", _fake_retry)
+
+    view = AIGamificationJobReadOnlyView(AIGamificationJob)
+    request = _DummyActionRequest(user_id=admin.id, form_data={})
+
+    message = await view.retry_job_row_action(request, pk="9")
+
+    assert message == "AI job #9 moved to status 'pending'"
+    assert captured["job_id"] == 9
+    assert captured["current_user_id"] == admin.id
 
 
 async def test_material_admin_view_validate_accepts_existing_required_level_relation(db):

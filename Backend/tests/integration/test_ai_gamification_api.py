@@ -274,7 +274,16 @@ async def test_ai_apply_question_replace_and_bound_target_validation(client, db)
     db.add(test)
     await db.flush()
 
-    question = Question(test_id=test.id, text="Original question", points=1.0, is_open_answer=True)
+    question = Question(
+        test_id=test.id,
+        text=(
+            "Original question\n\n"
+            "public delegate void ButtonClickedHandler(object sender, EventArgs e);\n"
+            "public class Button { public event ButtonClickedHandler Clicked; }"
+        ),
+        points=1.0,
+        is_open_answer=True,
+    )
     db.add(question)
     await db.flush()
 
@@ -303,7 +312,7 @@ async def test_ai_apply_question_replace_and_bound_target_validation(client, db)
     apply_response = await client.post(
         f"/api/v1/ai/gamify/{job_id}/apply",
         headers=auth_headers(token),
-        json={"target_type": "question", "target_id": question_id, "apply_mode": "replace"},
+        json={"apply_mode": "replace"},
     )
     assert apply_response.status_code == 200, apply_response.text
     assert apply_response.json()["updated_entity"]["id"] == question_id
@@ -311,6 +320,22 @@ async def test_ai_apply_question_replace_and_bound_target_validation(client, db)
     question_after_apply = await client.get(f"/api/v1/questions/{question_id}", headers=auth_headers(token))
     assert question_after_apply.status_code == 200, question_after_apply.text
     assert "Mission: C# Basics" in question_after_apply.json()["text"]
+    assert "public delegate void ButtonClickedHandler" in question_after_apply.json()["text"]
+
+
+async def test_ai_apply_raw_text_requires_explicit_target(client, db):
+    teacher = await seed_user(db, username="ai_raw_target_teacher@example.com", password="teacher123", role="teacher")
+    token = await login(client, teacher.username, "teacher123")
+
+    job = await seed_completed_ai_job(db, created_by_user_id=teacher.id, source_type="raw_text")
+    await db.commit()
+
+    response = await client.post(
+        f"/api/v1/ai/gamify/{job.id}/apply",
+        headers=auth_headers(token),
+        json={"apply_mode": "append"},
+    )
+    assert response.status_code == 422, response.text
 
 
 async def test_ai_apply_requires_completed_status(client, db):

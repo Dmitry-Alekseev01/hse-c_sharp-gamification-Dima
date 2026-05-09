@@ -41,7 +41,7 @@ from app.core.security import get_current_user, require_roles
 from app.core.test_attempts import AttemptBlockReason, build_attempt_view_state, is_deadline_passed
 from app.models.user import User
 from app.schemas.grading import AttemptScoreUpdate
-from app.schemas.answer import AnswerRead
+from app.schemas.answer import AnswerRead, AttemptSubmitRequest
 from app.schemas.question import QuestionRead
 from app.schemas.test_ import TestCardRead, TestCreate, TestRead, TestUpdate
 from app.schemas.analytics import TestSummary
@@ -50,6 +50,7 @@ from app.schemas.test_content import TestContentRead, TestContentWrite
 from app.repositories import analytics_repo, answer_repo, test_repo, test_attempt_repo
 from app.repositories import question_repo
 from app.services import test_service
+from app.services.answer_service import submit_answer
 from app.services.challenge_service import ChallengeEventType, record_event
 from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user, utcnow
 
@@ -602,6 +603,75 @@ async def get_attempt_state(
     return _build_attempt_state_payload(test=test, attempt=attempt, expired_reason=reason)
 
 
+@router.post("/attempts/{attempt_id}/submit", response_model=TestAttemptRead, status_code=status.HTTP_200_OK)
+async def submit_test_attempt(
+    attempt_id: int,
+    payload: AttemptSubmitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Submit all attempt answers in one request and complete the attempt.
+    Useful for reducing frontend N-request submit flows.
+    """
+    attempt = await test_attempt_repo.get_attempt(db, attempt_id)
+    if attempt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+    if attempt.user_id != current_user.id and current_user.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    test = await test_service.get_test_or_summary_access(db, attempt.test_id, current_user)
+    if current_user.role == "teacher":
+        await get_manageable_test(db, attempt.test_id, current_user)
+
+    if attempt.status == "completed":
+        return attempt
+
+    attempt, reason = await finalize_attempt_if_expired(db, test, attempt)
+    if attempt.status == "completed":
+        if reason is not None:
+            await bump_user_attempts_state_version(attempt.user_id)
+        return attempt
+
+    for item in payload.answers:
+        try:
+            await submit_answer(
+                db,
+                attempt.user_id,
+                attempt.test_id,
+                item.question_id,
+                item.answer_payload,
+                attempt_id=attempt.id,
+                validate_attempt=False,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        except IntegrityError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Concurrent answer update conflict; please retry",
+            ) from exc
+
+    completed_attempt = await test_attempt_repo.complete_attempt(db, attempt)
+    await bump_user_attempts_state_version(completed_attempt.user_id)
+    await analytics_repo.register_completed_attempt(db, completed_attempt.user_id, attempt_id=completed_attempt.id)
+    await record_event(
+        db,
+        user_id=completed_attempt.user_id,
+        event_type=ChallengeEventType.ATTEMPT_COMPLETED,
+        increment=1,
+    )
+    await record_event(
+        db,
+        user_id=completed_attempt.user_id,
+        event_type=ChallengeEventType.STREAK_DAY,
+        increment=1,
+    )
+    return completed_attempt
+
+
 @router.post("/attempts/{attempt_id}/complete", response_model=TestAttemptRead, status_code=status.HTTP_200_OK)
 async def complete_test_attempt(
     attempt_id: int,
@@ -667,4 +737,8 @@ async def override_attempt_score(
 
     updated_attempt = await test_attempt_repo.set_manual_score(db, attempt, payload.score)
     await bump_user_attempts_state_version(updated_attempt.user_id)
+    try:
+        await bump_cache_namespace(NS_TEST_SUMMARY)
+    except Exception:
+        pass
     return updated_attempt

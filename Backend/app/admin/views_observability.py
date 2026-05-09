@@ -5,7 +5,7 @@ from starlette.requests import Request
 from starlette_admin.actions import row_action
 from starlette_admin.exceptions import ActionFailed
 
-from app.cache.redis_cache import bump_user_attempts_state_version
+from app.cache.redis_cache import NS_TEST_SUMMARY, bump_cache_namespace, bump_user_attempts_state_version
 from app.models.answer import Answer
 from app.models.analytics import Analytics
 from app.models.points_ledger import PointsLedger
@@ -107,6 +107,10 @@ class TestAttemptReadOnlyView(TeacherScopedByTestReadOnlyView):
 
             updated_attempt = await test_attempt_repo.set_manual_score(session, attempt, payload.score)
             await bump_user_attempts_state_version(updated_attempt.user_id)
+            try:
+                await bump_cache_namespace(NS_TEST_SUMMARY)
+            except Exception:
+                pass
             await self._commit_session(request)
             return f"Manual score updated for attempt #{updated_attempt.id}"
         except ActionFailed:
