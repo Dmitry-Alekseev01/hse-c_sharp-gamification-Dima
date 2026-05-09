@@ -2,24 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { PERSONAL_ACCOUNT_ROUTE } from '../../routing/const';
 import { getToken, logoutUser, fetchUserProfile } from '../../api/api';
+import { useQuery } from '@tanstack/react-query';
 import './Navbar.css';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [userName, setUserName] = useState('');
   const location = useLocation();
   const menuRef = useRef(null);
 
-  useEffect(() => {
-    if (getToken()) {
-      fetchUserProfile()
-        .then((profile) => {
-          setUserName(profile.full_name || profile.username);
-        })
-        .catch(() => {});
-    }
-  }, []);
+  const { data: profile } = useQuery({
+    queryKey: ['userProfile'],
+    queryFn: fetchUserProfile,
+    enabled: !!getToken(),
+    staleTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -30,6 +27,8 @@ const Navbar = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const userName = profile ? profile.full_name || profile.username : '';
 
   const NAV_ITEMS = [
     { path: '/', label: 'Главная' },
@@ -42,7 +41,8 @@ const Navbar = () => {
     <nav className="Navbar">
       <div className="nav-container">
         <NavLink to="/" className="nav-brand">
-          <span>C#-мастер</span>
+          <img src="/logo-c-sharp.png" alt="C#-мастер" className="nav-logo" />
+          {/* <span>C#-мастер</span> */}
         </NavLink>
 
         <button className="mobile-menu-btn" onClick={() => setIsMenuOpen(!isMenuOpen)}>
@@ -69,8 +69,10 @@ const Navbar = () => {
                 className="profile-trigger"
                 onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
               >
-                <div className="user-avatar">{userName.charAt(0).toUpperCase()}</div>
-                <span className="user-name">{userName}</span>
+                <div className="user-avatar">
+                  {userName ? userName.charAt(0).toUpperCase() : '?'}
+                </div>
+                <span className="user-name">{userName || 'Профиль'}</span>
               </div>
               {isProfileMenuOpen && (
                 <div className="profile-dropdown">
