@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import select
 from starlette.requests import Request
 from starlette_admin.exceptions import FormValidationError
+from starlette_admin.fields import EnumField
 
 from app.cache.redis_cache import NS_MATERIALS, NS_TEST_CONTENT, NS_TEST_SUMMARY, NS_TESTS, bump_cache_namespace
 from app.core.material_taxonomy import MATERIAL_ATTACHMENT_KIND_VALUES, MATERIAL_BLOCK_TYPE_VALUES
@@ -22,6 +23,9 @@ from .views_base import AdminAuditedModelView, TeacherAccessibleModelView, Teach
 logger = logging.getLogger(__name__)
 MATERIAL_BLOCK_TYPE_VALUES_SET = set(MATERIAL_BLOCK_TYPE_VALUES)
 MATERIAL_ATTACHMENT_KIND_VALUES_SET = set(MATERIAL_ATTACHMENT_KIND_VALUES)
+MATERIAL_TYPE_CHOICES = [("lesson", "lesson"), ("module", "module"), ("article", "article")]
+MATERIAL_STATUS_CHOICES = [("draft", "draft"), ("published", "published"), ("archived", "archived")]
+MATERIAL_BLOCK_TYPE_CHOICES = [(value, value) for value in MATERIAL_BLOCK_TYPE_VALUES]
 
 
 class UserReadOnlyView(AdminAuditedModelView):
@@ -56,8 +60,8 @@ class MaterialAdminView(TeacherOwnedByFieldModelView):
     fields = [
         "id",
         "title",
-        "material_type",
-        "status",
+        EnumField("material_type", choices=MATERIAL_TYPE_CHOICES, required=True),
+        EnumField("status", choices=MATERIAL_STATUS_CHOICES, required=True),
         "description",
         "published_at",
         "author_id",
@@ -383,7 +387,15 @@ class ChoiceAdminView(TeacherAccessibleModelView):
 class MaterialBlockAdminView(TeacherAccessibleModelView):
     name = "Material Blocks"
     icon = "fa fa-layer-group"
-    fields = ["id", "material", "block_type", "title", "body", "url", "order_index"]
+    fields = [
+        "id",
+        "material",
+        EnumField("block_type", choices=MATERIAL_BLOCK_TYPE_CHOICES, required=True),
+        "title",
+        "body",
+        "url",
+        "order_index",
+    ]
     searchable_fields = ["title", "body", "url", "block_type"]
     sortable_fields = ["id", "material_id", "block_type", "order_index"]
     fields_default_sort = ["material_id asc", "order_index asc", "id asc"]

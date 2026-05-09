@@ -1,7 +1,9 @@
 import pytest
+from datetime import UTC, datetime
 
 pytestmark = pytest.mark.asyncio
 
+from app.models.level import Level
 from app.models.user import User
 from app.models.material import Material
 from app.repositories import test_repo
@@ -70,3 +72,31 @@ async def test_update_test_updates_max_attempts(db):
 
     assert updated is not None
     assert updated.max_attempts == 3
+
+
+@pytest.mark.asyncio
+async def test_update_test_can_clear_nullable_fields_with_explicit_none(db):
+    level = Level(name="Junior", required_points=10, description="entry")
+    db.add(level)
+    await db.flush()
+
+    deadline = datetime.now(UTC).replace(tzinfo=None)
+    test = await test_repo.create_test(
+        db,
+        title="Nullable fields",
+        deadline=deadline,
+        required_level_id=level.id,
+    )
+    assert test.deadline is not None
+    assert test.required_level_id == level.id
+
+    updated = await test_repo.update_test(
+        db,
+        test.id,
+        deadline=None,
+        required_level_id=None,
+    )
+
+    assert updated is not None
+    assert updated.deadline is None
+    assert updated.required_level_id is None
