@@ -51,6 +51,11 @@ class AIGamificationDraftValidationError(ValueError):
 
 _WORD_RE = re.compile(r"[A-Za-z\u0400-\u04FF0-9]+", re.UNICODE)
 _SENTENCE_END_RE = re.compile(r"[.!?\u2026]")
+_CODE_FENCE_RE = re.compile(r"```(?:[\w#+-]+)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
+_CODE_LINE_RE = re.compile(
+    r"(^\s*[{}]\s*$)|(;)|(\b(public|private|protected|internal|class|interface|struct|enum|delegate|event|void|return|new)\b)",
+    re.IGNORECASE,
+)
 
 
 def _utc_day_key(now: datetime | None = None) -> str:
@@ -212,6 +217,58 @@ def _validate_apply_target_for_bound_job(job, payload: AIGamifyApplyRequest) -> 
         )
 
 
+def _resolve_apply_payload_for_job(job, payload: AIGamifyApplyRequest) -> AIGamifyApplyRequest:
+    if payload.target_type is not None and payload.target_id is not None:
+        return payload
+    if job.source_type in {"material", "question"} and job.source_id is not None:
+        return payload.model_copy(
+            update={
+                "target_type": AIGamifyTargetType(job.source_type),
+                "target_id": int(job.source_id),
+            }
+        )
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="target_type and target_id are required for raw_text jobs",
+    )
+
+
+def _extract_code_snippets(text: str | None) -> list[str]:
+    if not text:
+        return []
+
+    fenced = [block.strip() for block in _CODE_FENCE_RE.findall(text or "") if block and block.strip()]
+    if fenced:
+        return fenced
+
+    blocks: list[str] = []
+    current: list[str] = []
+    lines = text.splitlines()
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        if _CODE_LINE_RE.search(line):
+            current.append(line)
+            continue
+        if len(current) >= 2:
+            blocks.append("\n".join(current).strip())
+        current = []
+    if len(current) >= 2:
+        blocks.append("\n".join(current).strip())
+    return [block for block in blocks if block]
+
+
+def _append_preserved_code_if_needed(*, draft_text: str, source_text: str | None) -> str:
+    source_blocks = _extract_code_snippets(source_text)
+    if not source_blocks:
+        return draft_text
+    if _extract_code_snippets(draft_text):
+        return draft_text
+
+    preserved_blocks = "\n\n".join(f"```csharp\n{block}\n```" for block in source_blocks)
+    preserved_section = f"[Preserved original code]\n{preserved_blocks}"
+    return f"{draft_text}\n\n{preserved_section}".strip()
+
+
 async def _apply_draft_to_material(
     db: AsyncSession,
     *,
@@ -274,7 +331,7 @@ async def _apply_draft_to_question(
 
     draft_text = _render_draft_text(draft)
     if apply_mode == "replace":
-        question.text = draft_text
+        question.text = _append_preserved_code_if_needed(draft_text=draft_text, source_text=question.text)
     else:
         base_text = (question.text or "").strip()
         append_text = f"[AI Gamification Draft]\n{draft_text}"
@@ -695,6 +752,7 @@ async def apply_job_draft(
     current_user: User,
 ) -> dict:
     job = await get_job_for_user(db, job_id, current_user)
+    payload = _resolve_apply_payload_for_job(job, payload)
 
     if job.status == "applied":
         if job.applied_target_type == payload.target_type.value and job.applied_target_id == payload.target_id:

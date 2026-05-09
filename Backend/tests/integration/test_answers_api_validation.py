@@ -149,3 +149,63 @@ async def test_answers_api_accepts_null_closed_payload_as_skipped(client, db):
     assert response.status_code == 201, response.text
     payload = response.json()
     assert payload["score"] == 0.0
+
+
+async def test_submit_attempt_batches_answers_and_completes_attempt(client, db):
+    teacher = await seed_user(db, username="answers_batch_teacher@example.com", password="teach123", role="teacher")
+    student = await seed_user(db, username="answers_batch_student@example.com", password="stud123", role="user")
+
+    teacher_token = await login(client, teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+
+    created_test = await _create_test(client, teacher_token, title="Batch submit payload")
+    first_question = await _create_mcq_question(
+        client,
+        teacher_token,
+        test_id=created_test["id"],
+        text="First MCQ",
+    )
+    second_question = await _create_mcq_question(
+        client,
+        teacher_token,
+        test_id=created_test["id"],
+        text="Second MCQ",
+    )
+    attempt = await _start_attempt(client, student_token, created_test["id"])
+
+    submit_response = await client.post(
+        f"/api/v1/tests/attempts/{attempt['id']}/submit",
+        headers=auth_headers(student_token),
+        json={
+            "answers": [
+                {
+                    "question_id": first_question["id"],
+                    "answer_payload": str(first_question["choices"][0]["id"]),
+                },
+                {
+                    "question_id": second_question["id"],
+                    "answer_payload": str(second_question["choices"][0]["id"]),
+                },
+            ]
+        },
+    )
+    assert submit_response.status_code == 200, submit_response.text
+    submit_payload = submit_response.json()
+    assert submit_payload["id"] == attempt["id"]
+    assert submit_payload["status"] == "completed"
+
+    quota_response = await client.get(
+        f"/api/v1/tests/{created_test['id']}/attempts/quota",
+        headers=auth_headers(student_token),
+    )
+    assert quota_response.status_code == 200, quota_response.text
+    quota_payload = quota_response.json()
+    assert quota_payload["completed_attempts"] == 1
+    assert quota_payload["remaining_attempts"] == 1
+
+    answers_response = await client.get(
+        f"/api/v1/answers/test/{created_test['id']}",
+        headers=auth_headers(student_token),
+    )
+    assert answers_response.status_code == 200, answers_response.text
+    assert len(answers_response.json()) == 2

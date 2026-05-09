@@ -1,9 +1,13 @@
+import json
 from typing import Any
 
+from sqlalchemy import select
 from starlette.requests import Request
 from starlette_admin.actions import row_action
 from starlette_admin.exceptions import ActionFailed, FormValidationError
+from starlette_admin.fields import EnumField, TagsField, TextAreaField
 
+from app.db.session import AsyncSessionLocal
 from app.models.ai_gamification_job import AIGamificationJob
 from app.models.achievement_definition import AchievementDefinition
 from app.models.challenge import Challenge, UserChallengeClaim, UserChallengeProgress
@@ -11,7 +15,14 @@ from app.models.reward_definition import RewardDefinition
 from app.models.season import LeaderboardSnapshot, Season
 from app.models.unlock_rule import UnlockRule
 from app.models.user import User
-from app.schemas.ai_gamification import AIGamifyApplyRequest, AIGamifyRequest
+from app.schemas.ai_gamification import (
+    AIGamifyApplyRequest,
+    AIGamifyRequest,
+    AIGamifySourceType,
+    AIGamifyStyle,
+    AIGamifyTargetLevel,
+    AIGamifyTone,
+)
 from app.services.ai_gamification_service import (
     apply_job_draft,
     build_source_snapshot,
@@ -21,6 +32,11 @@ from app.services.ai_gamification_service import (
 )
 
 from .views_base import AdminAuditedModelView, ReadOnlyAdminView, TeacherAccessibleModelView
+
+AI_SOURCE_TYPE_CHOICES = [(item.value, item.value) for item in AIGamifySourceType]
+AI_TARGET_LEVEL_CHOICES = [(item.value, item.value) for item in AIGamifyTargetLevel]
+AI_STYLE_CHOICES = [(item.value, item.value) for item in AIGamifyStyle]
+AI_TONE_CHOICES = [(item.value, item.value) for item in AIGamifyTone]
 
 
 class RewardDefinitionAdminView(AdminAuditedModelView):
@@ -195,16 +211,26 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
         "id",
         "created_by_user_id",
         "status",
-        "source_type",
+        EnumField("source_type", choices=AI_SOURCE_TYPE_CHOICES, required=True),
         "source_id",
         "raw_text",
         "source_snapshot",
-        "target_level",
+        EnumField("target_level", choices=AI_TARGET_LEVEL_CHOICES),
         "language",
-        "style",
-        "tone",
-        "constraints_json",
+        EnumField("style", choices=AI_STYLE_CHOICES),
+        EnumField("tone", choices=AI_TONE_CHOICES),
+        TagsField("constraints_json"),
         "draft_json",
+        TextAreaField(
+            "draft_preview_text",
+            label="Draft preview (UTF-8)",
+            read_only=True,
+            disabled=True,
+            exclude_from_list=True,
+            exclude_from_create=True,
+            exclude_from_edit=True,
+            rows=12,
+        ),
         "model",
         "provider",
         "usage_json",
@@ -220,6 +246,7 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
     ]
     searchable_fields = ["status", "source_type", "language", "style", "tone", "model", "provider"]
     sortable_fields = ["id", "created_by_user_id", "status", "source_type", "latency_ms", "created_at", "completed_at", "applied_at"]
+    exclude_fields_from_list = ["raw_text", "source_snapshot", "draft_json", "usage_json", "error_text"]
     exclude_fields_from_create = [
         "id",
         "created_by_user_id",
@@ -244,14 +271,15 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
 <form>
   <div class="mb-3">
     <label class="form-label" for="apply-target-type">Target type</label>
-    <select id="apply-target-type" class="form-select" name="target_type" required>
+    <select id="apply-target-type" class="form-select" name="target_type">
+      <option value="">auto (from source)</option>
       <option value="material">material</option>
       <option value="question">question</option>
     </select>
   </div>
   <div class="mb-3">
-    <label class="form-label" for="apply-target-id">Target ID</label>
-    <input id="apply-target-id" class="form-control" type="number" min="1" step="1" name="target_id" required>
+    <label class="form-label" for="apply-target-id">Target ID (optional)</label>
+    <input id="apply-target-id" class="form-control" type="number" min="1" step="1" name="target_id" placeholder="leave empty for bound source">
   </div>
   <div class="mb-3">
     <label class="form-label" for="apply-mode">Apply mode</label>
@@ -288,6 +316,23 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
     def _normalize_constraints(raw_constraints: Any) -> tuple[list[str], str | None]:
         if raw_constraints in (None, ""):
             return [], None
+        # JSON editor may submit an empty object by default for nullable JSON fields.
+        # Treat it as "no constraints" to keep create flow user-friendly.
+        if isinstance(raw_constraints, dict):
+            if not raw_constraints:
+                return [], None
+            # Some admin widgets post a placeholder object like {"": ""}.
+            # This should be interpreted as "no constraints", not a validation error.
+            if all(
+                str(key).strip() == "" and (value is None or str(value).strip() == "")
+                for key, value in raw_constraints.items()
+            ):
+                return [], None
+            list_candidate = raw_constraints.get("items")
+            if isinstance(list_candidate, (list, tuple)):
+                raw_constraints = list_candidate
+            else:
+                return [], "constraints_json must be a JSON array of strings"
         if not isinstance(raw_constraints, (list, tuple)):
             return [], "constraints_json must be a JSON array of strings"
         normalized: list[str] = []
@@ -295,6 +340,24 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
             if item in (None, ""):
                 continue
             text = str(item).strip()
+            if not text:
+                continue
+            # Tags field may submit a placeholder JSON object like {"":""}.
+            # Treat this as empty value instead of persisting noisy constraints.
+            if text in {"{}", "[]", "null"}:
+                continue
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                if not parsed or all(
+                    str(key).strip() == "" and (value is None or str(value).strip() == "")
+                    for key, value in parsed.items()
+                ):
+                    continue
+            if isinstance(parsed, list) and len(parsed) == 0:
+                continue
             if text:
                 normalized.append(text)
         return normalized, None
@@ -344,33 +407,50 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
 
     async def before_create(self, request: Request, data: dict[str, Any], obj: Any) -> None:
         payload = self._build_create_payload(data)
+        admin_user_id = self._resolve_admin_user_id(request)
+        if admin_user_id is None:
+            raise FormValidationError({"_schema": ["Unable to resolve admin identity"]})
+
         admin_user = getattr(request.state, "admin_user", None)
+        if admin_user is None or self._to_int_or_none(getattr(admin_user, "id", None)) is None:
+            admin_user = await self._scalar_one_or_none(request, select(User).where(User.id == int(admin_user_id)))
         if admin_user is None:
             raise FormValidationError({"_schema": ["Unable to resolve admin identity"]})
-        source_snapshot = await build_source_snapshot(request.state.session, payload, admin_user)
 
-        data["created_by_user_id"] = int(admin_user.id)
-        data["status"] = "pending"
-        data["source_type"] = payload.source_type.value
-        data["source_id"] = payload.source_id
-        data["raw_text"] = payload.raw_text
-        data["source_snapshot"] = source_snapshot
-        data["target_level"] = payload.target_level.value if payload.target_level else None
-        data["language"] = payload.language
-        data["style"] = payload.style.value if payload.style else None
-        data["tone"] = payload.tone.value if payload.tone else None
-        data["constraints_json"] = list(payload.constraints or [])
-        data["draft_json"] = None
-        data["model"] = None
-        data["provider"] = None
-        data["usage_json"] = None
-        data["latency_ms"] = None
-        data["error_text"] = None
-        data["started_at"] = None
-        data["completed_at"] = None
-        data["applied_at"] = None
-        data["applied_target_type"] = None
-        data["applied_target_id"] = None
+        # Populate required fields on persisted object before any extra query.
+        # Otherwise, query-triggered autoflush may fail on NOT NULL constraints.
+        obj.created_by_user_id = int(admin_user_id)
+        obj.status = "pending"
+        obj.source_type = payload.source_type.value
+        obj.source_id = payload.source_id
+        obj.raw_text = payload.raw_text
+        obj.target_level = payload.target_level.value if payload.target_level else None
+        obj.language = payload.language
+        obj.style = payload.style.value if payload.style else None
+        obj.tone = payload.tone.value if payload.tone else None
+        obj.constraints_json = list(payload.constraints or [])
+        obj.draft_json = None
+        obj.model = None
+        obj.provider = None
+        obj.usage_json = None
+        obj.latency_ms = None
+        obj.error_text = None
+        obj.started_at = None
+        obj.completed_at = None
+        obj.applied_at = None
+        obj.applied_target_type = None
+        obj.applied_target_id = None
+
+        try:
+            # Build snapshot in dedicated async session to avoid:
+            # 1) sync/async session mismatch in Starlette Admin middleware,
+            # 2) query-triggered autoflush on the admin write session.
+            async with AsyncSessionLocal() as snapshot_session:
+                with snapshot_session.no_autoflush:
+                    source_snapshot = await build_source_snapshot(snapshot_session, payload, admin_user)
+        except Exception as exc:
+            raise FormValidationError({"_schema": [self._humanize_action_error(exc)]})
+        obj.source_snapshot = source_snapshot
         await super().before_create(request, data, obj)
 
     async def after_create(self, request: Request, obj: Any) -> None:
@@ -395,16 +475,23 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
         action_btn_class="btn-outline-warning",
     )
     async def retry_job_row_action(self, request: Request, pk: Any) -> str:
-        admin_user = getattr(request.state, "admin_user", None)
-        if admin_user is None:
+        admin_user_id = self._resolve_admin_user_id(request)
+        if admin_user_id is None:
             raise ActionFailed("Unable to resolve admin identity")
-        session = request.state.session
         try:
-            payload = await retry_ai_gamification_job(session, job_id=int(pk), current_user=admin_user)
-            await self._commit_session(request)
+            job_id = int(pk)
+        except (TypeError, ValueError):
+            raise ActionFailed("Invalid job id")
+
+        try:
+            async with AsyncSessionLocal() as session:
+                admin_user = (await session.execute(select(User).where(User.id == int(admin_user_id)))).scalar_one_or_none()
+                if admin_user is None:
+                    raise ActionFailed("Unable to resolve admin identity")
+                payload = await retry_ai_gamification_job(session, job_id=job_id, current_user=admin_user)
+                await session.commit()
             return f"AI job #{payload['job_id']} moved to status '{payload['status']}'"
         except Exception as exc:
-            await self._rollback_session(request)
             raise ActionFailed(self._humanize_action_error(exc))
 
     @row_action(
@@ -418,16 +505,21 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
         form=_APPLY_ACTION_FORM,
     )
     async def apply_draft_row_action(self, request: Request, pk: Any) -> str:
-        admin_user = getattr(request.state, "admin_user", None)
-        if admin_user is None:
+        admin_user_id = self._resolve_admin_user_id(request)
+        if admin_user_id is None:
             raise ActionFailed("Unable to resolve admin identity")
 
         form_data = await request.form()
-        target_type = str(form_data.get("target_type") or "").strip()
-        target_id = self._to_int_or_none(form_data.get("target_id"))
+        target_type_raw = str(form_data.get("target_type") or "").strip()
+        target_type = target_type_raw or None
+        target_id_raw = form_data.get("target_id")
+        if target_id_raw in (None, ""):
+            target_id = None
+        else:
+            target_id = self._to_int_or_none(target_id_raw)
+            if target_id is None:
+                raise ActionFailed("target_id must be a positive integer")
         apply_mode = str(form_data.get("apply_mode") or "append").strip()
-        if target_id is None or target_id < 1:
-            raise ActionFailed("target_id must be a positive integer")
 
         try:
             payload = AIGamifyApplyRequest.model_validate(
@@ -440,22 +532,29 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
         except Exception as exc:
             raise ActionFailed(self._humanize_action_error(exc))
 
-        session = request.state.session
         try:
-            await get_job_for_user(session, int(pk), admin_user)
-            applied = await apply_job_draft(
-                session,
-                job_id=int(pk),
-                payload=payload,
-                current_user=admin_user,
-            )
-            await self._commit_session(request)
+            job_id = int(pk)
+        except (TypeError, ValueError):
+            raise ActionFailed("Invalid job id")
+
+        try:
+            async with AsyncSessionLocal() as session:
+                admin_user = (await session.execute(select(User).where(User.id == int(admin_user_id)))).scalar_one_or_none()
+                if admin_user is None:
+                    raise ActionFailed("Unable to resolve admin identity")
+                await get_job_for_user(session, job_id, admin_user)
+                applied = await apply_job_draft(
+                    session,
+                    job_id=job_id,
+                    payload=payload,
+                    current_user=admin_user,
+                )
+                await session.commit()
             return (
                 f"AI job #{applied['job_id']} applied to "
                 f"{applied['updated_entity']['type']} #{applied['updated_entity']['id']}"
             )
         except Exception as exc:
-            await self._rollback_session(request)
             raise ActionFailed(self._humanize_action_error(exc))
 
 

@@ -163,9 +163,19 @@ class AIGamifyDLQBatchActionRead(BaseModel):
 
 
 class AIGamifyApplyRequest(BaseModel):
-    target_type: AIGamifyTargetType
-    target_id: int
+    target_type: AIGamifyTargetType | None = None
+    target_id: int | None = None
     apply_mode: AIGamifyApplyMode = AIGamifyApplyMode.APPEND
+
+    @model_validator(mode="after")
+    def validate_target(self) -> "AIGamifyApplyRequest":
+        has_type = self.target_type is not None
+        has_id = self.target_id is not None
+        if has_type != has_id:
+            raise ValueError("target_type and target_id must be provided together")
+        if self.target_id is not None and int(self.target_id) < 1:
+            raise ValueError("target_id must be >= 1")
+        return self
 
 
 class AIGamifyApplyResponse(BaseModel):

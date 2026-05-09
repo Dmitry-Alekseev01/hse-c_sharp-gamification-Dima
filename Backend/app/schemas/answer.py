@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
 
+
 class AnswerCreate(BaseModel):
     user_id: int | None = None
     test_id: int
@@ -15,6 +16,22 @@ class AnswerCreate(BaseModel):
         return str(v)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AnswerSubmitItem(BaseModel):
+    question_id: int
+    answer_payload: str
+
+    @field_validator("answer_payload", mode="before")
+    def normalize_payload(cls, v):
+        if v is None:
+            return ""
+        return str(v)
+
+
+class AttemptSubmitRequest(BaseModel):
+    answers: list[AnswerSubmitItem]
+
 
 class AnswerRead(BaseModel):
     id: int

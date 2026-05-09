@@ -266,8 +266,8 @@ async def update_test(
     max_attempts: int | None = None,
     published: bool | None = None,
     material_ids: list[int] | None | object = _UNSET,
-    deadline=None,
-    required_level_id: int | None = None,
+    deadline: object = _UNSET,
+    required_level_id: int | None | object = _UNSET,
 ):
     test = await get_test(session, test_id)
     if test is None:
@@ -285,9 +285,9 @@ async def update_test(
         test.max_attempts = max_attempts
     if published is not None:
         test.published = published
-    if deadline is not None:
+    if deadline is not _UNSET:
         test.deadline = deadline
-    if required_level_id is not None:
+    if required_level_id is not _UNSET:
         test.required_level_id = required_level_id
     if material_ids is not _UNSET:
         await _sync_test_material_links(

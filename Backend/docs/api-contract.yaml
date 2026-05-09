@@ -569,6 +569,25 @@ components:
             choice id as string for closed questions, free text for open questions.
             Empty string (or `"null"` for closed questions) is treated as a skipped answer.
 
+    AnswerSubmitItem:
+      type: object
+      required: [question_id, answer_payload]
+      properties:
+        question_id: { type: integer }
+        answer_payload:
+          type: string
+          description: >
+            choice id as string for closed questions, free text for open questions.
+            Empty string (or `"null"` for closed questions) is treated as a skipped answer.
+
+    AttemptSubmitRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          items: { $ref: '#/components/schemas/AnswerSubmitItem' }
+
     AnswerRead:
       type: object
       properties:
@@ -824,12 +843,16 @@ components:
 
     AIGamifyApplyRequest:
       type: object
-      required: [target_type, target_id]
       properties:
         target_type:
           type: string
           enum: [material, question]
-        target_id: { type: integer }
+          nullable: true
+          description: Optional for bound source jobs (material/question). When omitted together with target_id, backend uses source entity.
+        target_id:
+          type: integer
+          nullable: true
+          description: Optional for bound source jobs (material/question). Must be provided together with target_type for explicit target.
         apply_mode:
           type: string
           enum: [replace, append]
@@ -1415,6 +1438,25 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TestAttemptRead' }
+
+  /api/v1/tests/attempts/{attempt_id}/submit:
+    post:
+      summary: Submit all answers for attempt and complete it
+      description: >
+        Batch endpoint for final submit to avoid `N` sequential `/answers` requests on the frontend.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttemptSubmitRequest' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestAttemptRead' }
+        '400': { description: Question/answer validation error }
+        '404': { description: Attempt or question not found }
+        '409': { description: Concurrent answer update conflict }
 
   /api/v1/tests/attempts/{attempt_id}/score:
     patch:

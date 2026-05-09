@@ -6,6 +6,7 @@ Orchestration service for answers:
 - invalidate cache
 - queue open-answer jobs for manual grading
 """
+import logging
 from datetime import UTC, datetime
 import json
 from typing import Optional
@@ -18,8 +19,18 @@ from app.models.question import Question
 from app.cache.redis_cache import NS_LEADERBOARD, NS_TEST_SUMMARY, bump_cache_namespace, get_redis_client
 from app.services.challenge_service import ChallengeEventType, record_event
 
+logger = logging.getLogger(__name__)
 
-async def submit_answer(session, user_id: int, test_id: int, question_id: int, payload: str, attempt_id: int | None = None):
+async def submit_answer(
+    session,
+    user_id: int,
+    test_id: int,
+    question_id: int,
+    payload: str,
+    attempt_id: int | None = None,
+    *,
+    validate_attempt: bool = True,
+):
     """
     High-level flow:
     1) persist answer
@@ -37,7 +48,7 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
     normalized_payload = "" if payload is None else str(payload)
     trimmed_payload = normalized_payload.strip()
 
-    if attempt_id is not None:
+    if attempt_id is not None and validate_attempt:
         attempt = await test_attempt_repo.get_attempt(session, attempt_id)
         if attempt is None:
             raise LookupError("Attempt not found")
@@ -49,6 +60,7 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
     is_open = bool(question.is_open_answer)
     skipped_closed_answer = False
     skipped_open_answer = False
+    should_enqueue_open_grading = False
 
     if not is_open:
         if trimmed_payload.lower() in {"", "null", "none"}:
@@ -96,14 +108,8 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
             await session.flush()
             await session.refresh(ans)
         else:
-            # open answer -> push to redis queue for manual grading
-            try:
-                r = get_redis_client()
-                job = {"answer_id": ans.id, "user_id": user_id}
-                await r.rpush("grading:open", json.dumps(job))
-            except Exception:
-                # if redis queueing fails, continue; the answer remains ungraded
-                pass
+            # Queueing is done post-commit to avoid worker races with uncommitted rows.
+            should_enqueue_open_grading = True
 
     await analytics_repo.create_or_update_analytics(
         session,
@@ -144,6 +150,17 @@ async def submit_answer(session, user_id: int, test_id: int, question_id: int, p
             pass
 
     add_post_commit_task(session, invalidate_after_commit)
+
+    if should_enqueue_open_grading:
+        async def enqueue_open_grading_after_commit() -> None:
+            try:
+                r = get_redis_client()
+                job = {"answer_id": ans.id, "user_id": user_id}
+                await r.rpush("grading:open", json.dumps(job))
+            except Exception:
+                logger.exception("Failed to enqueue open-answer grading job", extra={"answer_id": ans.id})
+
+        add_post_commit_task(session, enqueue_open_grading_after_commit)
 
     return graded if graded is not None else ans
 
