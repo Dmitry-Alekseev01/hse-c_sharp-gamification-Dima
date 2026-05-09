@@ -100,19 +100,15 @@ const TestDetails = () => {
     }
     setIsSubmitting(true);
     try {
-      const allAnswers = [
-        ...Object.entries(userAnswers).map(([qId, choiceId]) => ({
-          questionId: parseInt(qId),
-          payload: String(choiceId),
-        })),
-        ...Object.entries(openAnswers).map(([qId, text]) => ({
-          questionId: parseInt(qId),
-          payload: text,
-        })),
+      const answerPromises = [
+        ...Object.entries(userAnswers).map(([qId, choiceId]) =>
+          submitAnswer(parseInt(id), parseInt(qId), String(choiceId), attemptId)
+        ),
+        ...Object.entries(openAnswers).map(([qId, text]) =>
+          submitAnswer(parseInt(id), parseInt(qId), text, attemptId)
+        ),
       ];
-      for (const ans of allAnswers) {
-        await submitAnswer(parseInt(id), ans.questionId, ans.payload, attemptId);
-      }
+      await Promise.all(answerPromises);
       await completeTestAttempt(attemptId);
       setTestSubmitted(true);
     } catch (err) {

@@ -1,23 +1,43 @@
-import React, { useState, useEffect } from 'react';
+// analysis.jsx
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchTests, fetchTestAttempts } from '../../api/api';
+import { useQuery } from '@tanstack/react-query';
+import { fetchLearningDashboard } from '../../api/api';
 import './Analytics.css';
 
 const Analytics = () => {
   const [activeTab, setActiveTab] = useState('progress');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [stats, setStats] = useState({
-    materialsStudied: 0,
-    totalMaterials: 0,
-    testsCompleted: 0,
-    totalTests: 0,
-    averageScore: 0,
-    totalPoints: 0,
-    streakDays: 0,
-  });
-  const [testResults, setTestResults] = useState([]);
   const navigate = useNavigate();
+
+  const {
+    data: dashboard,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ['learningDashboard'],
+    queryFn: () => fetchLearningDashboard(200),
+  });
+
+  if (isLoading) return <div className="loading">Загрузка аналитики...</div>;
+  if (error) return <div className="error">Ошибка: {error.message}</div>;
+
+  const stats = {
+    materialsStudied: dashboard?.total_materials || 0,
+    totalMaterials: dashboard?.total_materials || 0,
+    testsCompleted: dashboard?.completed_tests || 0,
+    totalTests: dashboard?.total_tests || 0,
+    averageScore: dashboard?.average_score_percent || 0,
+    totalPoints: 0,
+    streakDays: dashboard?.streak_days || 0,
+    testResults: (dashboard?.test_results || []).map((t) => ({
+      id: t.test_id,
+      name: t.title,
+      score: t.score_percent || 0,
+      date: t.completed_at ? new Date(t.completed_at).toLocaleDateString('ru-RU') : '—',
+      userScore: t.score_value || 0,
+      maxScore: t.max_score || 0,
+    })),
+  };
 
   const renderProgressBar = (p) => (
     <div className="progress-bar">
@@ -25,71 +45,11 @@ const Analytics = () => {
     </div>
   );
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const tests = await fetchTests();
-        const results = [];
-        let completed = 0,
-          totalScore = 0;
-        for (const test of tests) {
-          try {
-            const attempts = await fetchTestAttempts(test.id);
-            const completedAttempts = (attempts || []).filter((a) => a.status === 'completed');
-            if (completedAttempts.length) {
-              const last = completedAttempts.sort(
-                (a, b) =>
-                  new Date(b.completed_at || b.submitted_at) -
-                  new Date(a.completed_at || a.submitted_at)
-              )[0];
-              const userScore = last.score || 0;
-              const percent = test.max_score ? Math.round((userScore / test.max_score) * 100) : 0;
-              const date =
-                last.completed_at || last.submitted_at
-                  ? new Date(last.completed_at || last.submitted_at).toLocaleDateString('ru-RU')
-                  : '—';
-              results.push({
-                id: test.id,
-                name: test.title,
-                score: percent,
-                date,
-                userScore,
-                maxScore: test.max_score,
-              });
-              completed++;
-              totalScore += percent;
-            }
-          } catch (e) {}
-        }
-        const avg = completed ? Math.round(totalScore / completed) : 0;
-        setStats({
-          materialsStudied: 0,
-          totalMaterials: 0,
-          testsCompleted: completed,
-          totalTests: tests.length,
-          averageScore: avg,
-          totalPoints: 0,
-          streakDays: 0,
-        });
-        setTestResults(results);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
-
-  const handleBack = () => navigate('/personal-account');
-  if (loading) return <div className="loading">Загрузка аналитики...</div>;
-  if (error) return <div className="error">Ошибка: {error}</div>;
-
   return (
     <div className="analytics-page">
       <div className="analytics-container">
         <div className="analytics-header">
-          <button className="back-button" onClick={handleBack}>
+          <button className="back-button" onClick={() => navigate('/personal-account')}>
             Назад в личный кабинет
           </button>
           <h1>Аналитика обучения</h1>
@@ -121,7 +81,9 @@ const Analytics = () => {
                   <span className="stat-divider">/</span>
                   <span className="stat-total">{stats.totalMaterials}</span>
                 </div>
-                {renderProgressBar(0)}
+                {renderProgressBar(
+                  stats.totalMaterials ? (stats.materialsStudied / stats.totalMaterials) * 100 : 0
+                )}
               </div>
               <div className="stat-card">
                 <div className="stat-header">
@@ -165,12 +127,12 @@ const Analytics = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {testResults.length === 0 ? (
+                  {stats.testResults.length === 0 ? (
                     <tr>
                       <td colSpan="3">Нет пройденных тестов</td>
                     </tr>
                   ) : (
-                    testResults.map((t) => (
+                    stats.testResults.map((t) => (
                       <tr key={t.id}>
                         <td>{t.name}</td>
                         <td>

@@ -1,20 +1,29 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useProfileStats } from '../../hooks/useProfile';
+import { useQuery } from '@tanstack/react-query';
+import { fetchLearningDashboard, fetchUserProfile } from '../../api/api';
 import './PersonalAccount.css';
 
 const PersonalAccount = () => {
-  const { profile, stats, isLoading, error } = useProfileStats();
+  const { data: profile, isLoading: profileLoading } = useQuery({
+    queryKey: ['userProfile'],
+    queryFn: fetchUserProfile,
+  });
+
+  const { data: dashboard, isLoading: dashboardLoading } = useQuery({
+    queryKey: ['learningDashboard'],
+    queryFn: () => fetchLearningDashboard(200),
+  });
+
+  const isLoading = profileLoading || dashboardLoading;
 
   if (isLoading) return <div className="loading">Загрузка профиля...</div>;
-  if (error) return <div className="error">Ошибка: {error.message}</div>;
   if (!profile) return <div className="error">Пожалуйста, войдите в систему</div>;
 
-  // Форматирование даты регистрации
   const formatDate = (dateString) => {
-    if (!dateString) return null;
+    if (!dateString) return 'Не указана';
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) return null;
+    if (isNaN(date.getTime())) return 'Не указана';
     return date.toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long',
@@ -22,25 +31,22 @@ const PersonalAccount = () => {
     });
   };
 
-  const displayName =
-    profile.full_name ||
-    (profile.username && profile.username.includes('@') ? 'Пользователь' : profile.username);
+  const displayName = profile.full_name || profile.username || 'Пользователь';
   const registrationDate =
-    formatDate(profile.created_at) ||
-    formatDate(profile.registered_at) ||
-    formatDate(profile.date_joined) ||
-    'Не указана';
+    formatDate(profile.created_at) || formatDate(profile.registered_at) || 'Не указана';
 
-  const materialsDisplay = `0/${stats.totalMaterials || 0}`;
-  const testsDisplay = `${stats.completedTests || 0}/${stats.totalTests || 0}`;
-  const progressDisplay = `${stats.overallProgress || 0}%`;
+  const stats = {
+    totalMaterials: dashboard?.total_materials || 0,
+    completedTests: dashboard?.completed_tests || 0,
+    totalTests: dashboard?.total_tests || 0,
+    overallProgress: dashboard?.total_tests
+      ? Math.round((dashboard.completed_tests / dashboard.total_tests) * 100)
+      : 0,
+  };
 
   return (
     <div className="personal-account-page">
-      <div className="account-header">
-        <h1>Личный кабинет</h1>
-        <p className="account-subtitle">Управление вашей учётной записью</p>
-      </div>
+      {/* ... (заголовок) ... */}
       <div className="account-content">
         <div className="main-content-wrapper">
           <div className="user-info-card">
@@ -89,19 +95,20 @@ const PersonalAccount = () => {
                 </p>
                 <div className="analytics-stats-preview">
                   <div className="preview-stat">
-                    <div className="preview-stat-value">{progressDisplay}</div>
+                    <div className="preview-stat-value">{stats.overallProgress}%</div>
                     <div className="preview-stat-label">Общий прогресс</div>
                   </div>
                   <div className="preview-stat">
-                    <div className="preview-stat-value">{materialsDisplay}</div>
+                    <div className="preview-stat-value">{stats.totalMaterials}</div>
                     <div className="preview-stat-label">Материалы</div>
                   </div>
                   <div className="preview-stat">
-                    <div className="preview-stat-value">{testsDisplay}</div>
+                    <div className="preview-stat-value">
+                      {stats.completedTests}/{stats.totalTests}
+                    </div>
                     <div className="preview-stat-label">Тесты</div>
                   </div>
                 </div>
-                <div className="view-analytics-btn">Подробная аналитика</div>
               </div>
             </Link>
           </div>
