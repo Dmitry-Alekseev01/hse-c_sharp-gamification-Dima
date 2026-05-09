@@ -6,6 +6,7 @@ from starlette_admin.actions import row_action
 from starlette_admin.exceptions import ActionFailed
 
 from app.cache.redis_cache import NS_TEST_SUMMARY, bump_cache_namespace, bump_user_attempts_state_version
+from app.db.session import AsyncSessionLocal
 from app.models.answer import Answer
 from app.models.analytics import Analytics
 from app.models.points_ledger import PointsLedger
@@ -95,29 +96,38 @@ class TestAttemptReadOnlyView(TeacherScopedByTestReadOnlyView):
         except (TypeError, ValueError):
             raise ActionFailed("Score must be a number")
 
-        session = request.state.session
         try:
-            if attempt.max_score is None:
-                attempt = await test_attempt_repo.refresh_attempt_scores(session, attempt)
-
-            max_score = float(attempt.max_score or 0.0)
             payload = AttemptScoreUpdate(score=score_value)
-            if payload.score < 0 or payload.score > max_score:
-                raise ActionFailed(f"Score must be between 0 and {max_score}")
+            async with AsyncSessionLocal() as session:
+                try:
+                    db_attempt = await test_attempt_repo.get_attempt(session, int(attempt.id))
+                    if db_attempt is None:
+                        raise ActionFailed("Attempt not found")
+                    if db_attempt.status != "completed":
+                        raise ActionFailed("Attempt must be completed before final grading")
+                    if db_attempt.max_score is None:
+                        db_attempt = await test_attempt_repo.refresh_attempt_scores(session, db_attempt)
 
-            updated_attempt = await test_attempt_repo.set_manual_score(session, attempt, payload.score)
-            await bump_user_attempts_state_version(updated_attempt.user_id)
+                    max_score = float(db_attempt.max_score or 0.0)
+                    if payload.score < 0 or payload.score > max_score:
+                        raise ActionFailed(f"Score must be between 0 and {max_score}")
+
+                    updated_attempt = await test_attempt_repo.set_manual_score(session, db_attempt, payload.score)
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    raise
+
+            try:
+                await bump_user_attempts_state_version(updated_attempt.user_id)
+            except Exception:
+                pass
             try:
                 await bump_cache_namespace(NS_TEST_SUMMARY)
             except Exception:
                 pass
-            await self._commit_session(request)
             return f"Manual score updated for attempt #{updated_attempt.id}"
-        except ActionFailed:
-            await self._rollback_session(request)
-            raise
         except Exception as exc:
-            await self._rollback_session(request)
             raise ActionFailed(self._humanize_action_error(exc))
 
 
@@ -180,22 +190,22 @@ class AnswerReadOnlyView(TeacherScopedByTestReadOnlyView):
         if grader_id is None:
             raise ActionFailed("Unable to resolve grader identity")
 
-        session = request.state.session
         try:
             payload = GradeRequest(score=score_value)
-            await manual_grade_open_answer_service(
-                session,
-                answer_id=int(answer.id),
-                grader_id=grader_id,
-                score=payload.score,
-            )
-            await self._commit_session(request)
+            async with AsyncSessionLocal() as session:
+                try:
+                    await manual_grade_open_answer_service(
+                        session,
+                        answer_id=int(answer.id),
+                        grader_id=grader_id,
+                        score=payload.score,
+                    )
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    raise
             return f"Answer #{answer.id} was graded successfully"
-        except ActionFailed:
-            await self._rollback_session(request)
-            raise
         except Exception as exc:
-            await self._rollback_session(request)
             raise ActionFailed(self._humanize_action_error(exc))
 
 
