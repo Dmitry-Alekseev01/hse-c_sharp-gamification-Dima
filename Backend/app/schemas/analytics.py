@@ -154,6 +154,7 @@ class LearningTestResultRead(BaseModel):
     title: str
     deadline: datetime | None
     user_status: Literal["not_started", "in_progress", "completed"]
+    ui_status: Literal["not_started", "in_progress", "completed"] = "not_started"
     progress_state: Literal["not_started", "in_progress", "completed"] = "not_started"
     attempt_state: Literal["can_start", "can_resume", "blocked"] = "can_start"
     can_start: bool = True

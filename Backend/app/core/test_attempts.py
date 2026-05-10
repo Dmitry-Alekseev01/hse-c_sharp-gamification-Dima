@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Literal, TypedDict
 
 ProgressState = Literal["not_started", "in_progress", "completed"]
+UiStatus = ProgressState
 AttemptState = Literal["can_start", "can_resume", "blocked"]
 AttemptBlockReason = Literal["no_attempts", "deadline_passed", "time_limit_exceeded", "level_locked", "test_unpublished"]
 
@@ -9,6 +10,7 @@ AttemptBlockReason = Literal["no_attempts", "deadline_passed", "time_limit_excee
 class AttemptViewState(TypedDict):
     progress_state: ProgressState
     user_status: ProgressState
+    ui_status: UiStatus
     attempt_state: AttemptState
     can_start: bool
     can_resume: bool
@@ -80,6 +82,7 @@ def build_attempt_view_state(
     return {
         "progress_state": progress_state,
         "user_status": user_status,
+        "ui_status": user_status,
         "attempt_state": attempt_state,
         "can_start": can_start,
         "can_resume": can_resume,

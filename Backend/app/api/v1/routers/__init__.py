@@ -4,6 +4,7 @@ from . import tests
 from . import answers
 from . import questions
 from . import analytics
+from . import analytics_levels
 from . import levels
 from . import choices
 from . import auth

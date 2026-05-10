@@ -205,20 +205,17 @@ async def _generate_draft_with_semantic_fallback(
     return fallback_result
 
 
-def _validate_apply_target_for_bound_job(job, payload: AIGamifyApplyRequest) -> None:
-    if job.source_type not in {"material", "question"}:
-        return
-    if job.source_id is None:
-        return
-    if payload.target_type.value != job.source_type or payload.target_id != job.source_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Draft is bound to its source entity and cannot be applied to another target",
-        )
+def _resolve_source_text_for_code_preservation(job) -> str:
+    if job.source_type == "raw_text":
+        return str(job.raw_text or "")
+    return str(job.source_snapshot or "")
 
 
 def _resolve_apply_payload_for_job(job, payload: AIGamifyApplyRequest) -> AIGamifyApplyRequest:
     if payload.target_type is not None and payload.target_id is not None:
+        return payload
+    if payload.target_type is not None and payload.target_id is None:
+        # Explicit target type + no id means "auto-create target".
         return payload
     if job.source_type in {"material", "question"} and job.source_id is not None:
         return payload.model_copy(
@@ -227,10 +224,8 @@ def _resolve_apply_payload_for_job(job, payload: AIGamifyApplyRequest) -> AIGami
                 "target_id": int(job.source_id),
             }
         )
-    raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail="target_type and target_id are required for raw_text jobs",
-    )
+    # For raw_text jobs without explicit target, default to creating a draft material.
+    return payload.model_copy(update={"target_type": AIGamifyTargetType.MATERIAL, "target_id": None})
 
 
 def _extract_code_snippets(text: str | None) -> list[str]:
@@ -276,6 +271,7 @@ async def _apply_draft_to_material(
     draft: AIGamifyDraft,
     apply_mode: str,
     current_user: User,
+    preserve_source_text: str | None = None,
 ) -> int:
     material = await material_repo.get_material(db, target_id)
     if material is None:
@@ -284,6 +280,10 @@ async def _apply_draft_to_material(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     draft_text = _render_draft_text(draft)
+    draft_text = _append_preserved_code_if_needed(
+        draft_text=draft_text,
+        source_text=preserve_source_text,
+    )
     if apply_mode == "replace":
         material.blocks = [
             MaterialBlock(
@@ -318,6 +318,7 @@ async def _apply_draft_to_question(
     draft: AIGamifyDraft,
     apply_mode: str,
     current_user: User,
+    preserve_source_text: str | None = None,
 ) -> int:
     question = await question_repo.get_question_with_choices(db, target_id)
     if question is None:
@@ -330,8 +331,12 @@ async def _apply_draft_to_question(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
 
     draft_text = _render_draft_text(draft)
+    draft_text = _append_preserved_code_if_needed(
+        draft_text=draft_text,
+        source_text=preserve_source_text or question.text,
+    )
     if apply_mode == "replace":
-        question.text = _append_preserved_code_if_needed(draft_text=draft_text, source_text=question.text)
+        question.text = draft_text
     else:
         base_text = (question.text or "").strip()
         append_text = f"[AI Gamification Draft]\n{draft_text}"
@@ -340,6 +345,86 @@ async def _apply_draft_to_question(
     await db.flush()
     await db.refresh(question)
     return question.id
+
+
+async def _auto_create_material_target_from_draft(
+    db: AsyncSession,
+    *,
+    draft: AIGamifyDraft,
+    source_text: str,
+    current_user: User,
+) -> int:
+    # Teacher-owned draft by default; admin-created drafts are owned by admin user.
+    title = (draft.draft_title or "AI Gamified Draft").strip()[:300] or "AI Gamified Draft"
+    body = _render_draft_text(draft)
+    body = _append_preserved_code_if_needed(draft_text=body, source_text=source_text)
+
+    material = await material_repo.create_material(
+        db,
+        title=title,
+        description=(draft.story_frame or "").strip() or None,
+        author_id=current_user.id,
+        material_type="lesson",
+        status="draft",
+        blocks=[
+            {
+                "block_type": "text",
+                "title": title,
+                "body": body,
+                "url": None,
+                "order_index": 0,
+            }
+        ],
+    )
+    return int(material.id)
+
+
+async def _auto_create_question_target_from_draft(
+    db: AsyncSession,
+    *,
+    job,
+    draft: AIGamifyDraft,
+    source_text: str,
+    current_user: User,
+) -> int:
+    if job.source_type != "question" or job.source_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Auto-create for question target requires question source context",
+        )
+
+    source_question = await question_repo.get_question_with_choices(db, int(job.source_id))
+    if source_question is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source question not found")
+
+    source_test = await test_repo.get_test(db, int(source_question.test_id))
+    if source_test is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source test not found")
+    if current_user.role == "teacher" and not can_manage_test(current_user, source_test):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    text = _render_draft_text(draft)
+    text = _append_preserved_code_if_needed(draft_text=text, source_text=source_text or source_question.text)
+
+    copied_choices = [
+        {
+            "value": choice.value,
+            "ordinal": int(choice.ordinal),
+            "is_correct": bool(choice.is_correct),
+        }
+        for choice in sorted(source_question.choices, key=lambda item: int(item.ordinal or 0))
+    ]
+
+    created_question = await question_repo.create_question_with_choices(
+        db,
+        test_id=int(source_question.test_id),
+        text=text,
+        points=float(source_question.points),
+        is_open_answer=bool(source_question.is_open_answer),
+        material_urls=list(source_question.material_urls or []),
+        choices=copied_choices,
+    )
+    return int(created_question.id)
 
 
 def _request_from_job(job) -> AIGamifyRequest:
@@ -755,11 +840,17 @@ async def apply_job_draft(
     payload = _resolve_apply_payload_for_job(job, payload)
 
     if job.status == "applied":
-        if job.applied_target_type == payload.target_type.value and job.applied_target_id == payload.target_id:
+        same_target_type = job.applied_target_type == payload.target_type.value
+        same_target_id = (
+            job.applied_target_id == payload.target_id
+            if payload.target_id is not None
+            else True
+        )
+        if same_target_type and same_target_id and job.applied_target_id is not None:
             return {
                 "job_id": job.id,
                 "status": "applied",
-                "updated_entity": {"type": payload.target_type.value, "id": payload.target_id},
+                "updated_entity": {"type": job.applied_target_type, "id": job.applied_target_id},
             }
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job already applied to another target")
 
@@ -768,8 +859,6 @@ async def apply_job_draft(
 
     if not job.draft_json:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Completed job has no draft payload")
-
-    _validate_apply_target_for_bound_job(job, payload)
 
     try:
         draft = AIGamifyDraft.model_validate(job.draft_json)
@@ -780,36 +869,57 @@ async def apply_job_draft(
     except AIGamificationDraftValidationError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
+    source_text_for_preserve = _resolve_source_text_for_code_preservation(job)
+
     if payload.target_type == AIGamifyTargetType.MATERIAL:
-        target_id = await _apply_draft_to_material(
-            db,
-            target_id=payload.target_id,
-            draft=draft,
-            apply_mode=payload.apply_mode.value,
-            current_user=current_user,
-        )
+        if payload.target_id is None:
+            target_id = await _auto_create_material_target_from_draft(
+                db,
+                draft=draft,
+                source_text=source_text_for_preserve,
+                current_user=current_user,
+            )
+        else:
+            target_id = await _apply_draft_to_material(
+                db,
+                target_id=payload.target_id,
+                draft=draft,
+                apply_mode=payload.apply_mode.value,
+                current_user=current_user,
+                preserve_source_text=source_text_for_preserve,
+            )
         try:
             await bump_cache_namespace(NS_MATERIALS, NS_TESTS, NS_TEST_CONTENT)
         except Exception:
-            logger.exception("Failed to bump cache namespace for material apply, target_id=%s", payload.target_id)
+            logger.exception("Failed to bump cache namespace for material apply, target_id=%s", target_id)
     else:
-        target_id = await _apply_draft_to_question(
-            db,
-            target_id=payload.target_id,
-            draft=draft,
-            apply_mode=payload.apply_mode.value,
-            current_user=current_user,
-        )
+        if payload.target_id is None:
+            target_id = await _auto_create_question_target_from_draft(
+                db,
+                job=job,
+                draft=draft,
+                source_text=source_text_for_preserve,
+                current_user=current_user,
+            )
+        else:
+            target_id = await _apply_draft_to_question(
+                db,
+                target_id=payload.target_id,
+                draft=draft,
+                apply_mode=payload.apply_mode.value,
+                current_user=current_user,
+                preserve_source_text=source_text_for_preserve,
+            )
         try:
             await bump_cache_namespace(NS_QUESTIONS, NS_TEST_CONTENT)
         except Exception:
-            logger.exception("Failed to bump cache namespace for question apply, target_id=%s", payload.target_id)
+            logger.exception("Failed to bump cache namespace for question apply, target_id=%s", target_id)
 
     await ai_gamification_repo.set_job_applied(
         db,
         job,
         target_type=payload.target_type.value,
-        target_id=payload.target_id,
+        target_id=target_id,
     )
 
     return {

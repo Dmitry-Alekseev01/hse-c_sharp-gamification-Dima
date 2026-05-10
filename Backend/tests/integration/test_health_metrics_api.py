@@ -5,7 +5,10 @@ from app.core.config import settings
 pytestmark = pytest.mark.asyncio
 
 
-async def test_health_metrics_endpoint_returns_runtime_snapshot(client):
+async def test_health_metrics_endpoint_returns_runtime_snapshot(client, monkeypatch):
+    monkeypatch.setattr(settings, "app_env", "test")
+    monkeypatch.setattr(settings, "monitoring_metrics_token", "")
+
     baseline_response = await client.get("/health/metrics")
     assert baseline_response.status_code == 200
     baseline_payload = baseline_response.json()
@@ -38,3 +41,12 @@ async def test_health_metrics_endpoint_requires_token_when_configured(client, mo
 
     ok_response = await client.get("/health/metrics", headers={"X-Metrics-Token": "metrics-secret-token"})
     assert ok_response.status_code == 200
+
+
+async def test_health_metrics_endpoint_requires_configured_token_outside_test_env(client, monkeypatch):
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "monitoring_metrics_token", "")
+
+    response = await client.get("/health/metrics")
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"].lower()

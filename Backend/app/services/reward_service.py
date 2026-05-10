@@ -225,7 +225,6 @@ async def sync_user_rewards(session: AsyncSession, user_id: int) -> int:
 
 
 async def list_user_rewards(session: AsyncSession, user_id: int) -> list[dict[str, Any]]:
-    await sync_user_rewards(session, user_id)
     rows = (
         await session.execute(
             select(UserReward, RewardDefinition)
@@ -253,7 +252,6 @@ async def list_user_rewards(session: AsyncSession, user_id: int) -> list[dict[st
 async def list_user_unlocks(session: AsyncSession, user_id: int) -> list[dict[str, Any]]:
     # Backward-compatible endpoint name. It returns reward condition status only,
     # and does not represent API/content access permissions.
-    await sync_user_rewards(session, user_id)
     ctx = await _collect_reward_context(session, user_id)
     rows = (
         await session.execute(

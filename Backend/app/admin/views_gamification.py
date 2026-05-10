@@ -279,7 +279,7 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
   </div>
   <div class="mb-3">
     <label class="form-label" for="apply-target-id">Target ID (optional)</label>
-    <input id="apply-target-id" class="form-control" type="number" min="1" step="1" name="target_id" placeholder="leave empty for bound source">
+    <input id="apply-target-id" class="form-control" type="number" min="1" step="1" name="target_id" placeholder="empty = bound source or auto-create target">
   </div>
   <div class="mb-3">
     <label class="form-label" for="apply-mode">Apply mode</label>

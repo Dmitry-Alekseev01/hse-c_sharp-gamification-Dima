@@ -12,8 +12,12 @@ import httpx
 from app.core.config import settings
 from app.schemas.ai_gamification import AIGamifyDraft, AIGamifyRequest, AIGamifySourceType
 
-DEFAULT_ANIME_UNIVERSE = "Jujutsu Kaisen (Магическая Битва)"
-ANIME_UNIVERSE_HINT = "Jujutsu Kaisen (Магическая Битва), Naruto, Bleach"
+# Canonical constants using ASCII-safe unicode escapes.
+DEFAULT_ANIME_UNIVERSE = "Jujutsu Kaisen (\u041c\u0430\u0433\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u0411\u0438\u0442\u0432\u0430)"
+ANIME_UNIVERSE_HINT = (
+    "Jujutsu Kaisen (\u041c\u0430\u0433\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u0411\u0438\u0442\u0432\u0430), "
+    "Naruto, Bleach"
+)
 
 
 class AIGamificationError(RuntimeError):
@@ -97,17 +101,17 @@ def _build_system_prompt() -> str:
 
 def _resolve_anime_universe(constraints: list[str]) -> str:
     joined = " ".join(constraints).lower()
-    if "naruto" in joined or "наруто" in joined:
+    if "naruto" in joined or "\u043d\u0430\u0440\u0443\u0442\u043e" in joined:
         return "Naruto"
-    if "bleach" in joined or "блич" in joined:
+    if "bleach" in joined or "\u0431\u043b\u0438\u0447" in joined:
         return "Bleach"
     if (
         "jujutsu" in joined
-        or "магичес" in joined
-        or "маг. битва" in joined
-        or "магическая битва" in joined
+        or "\u043c\u0430\u0433\u0438\u0447\u0435\u0441" in joined
+        or "\u043c\u0430\u0433. \u0431\u0438\u0442\u0432\u0430" in joined
+        or "\u043c\u0430\u0433\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u0431\u0438\u0442\u0432\u0430" in joined
     ):
-        return "Jujutsu Kaisen (Магическая Битва)"
+        return DEFAULT_ANIME_UNIVERSE
     return DEFAULT_ANIME_UNIVERSE
 
 

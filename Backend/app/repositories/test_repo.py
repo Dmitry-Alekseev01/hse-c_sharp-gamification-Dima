@@ -197,6 +197,7 @@ async def get_user_test_state_map(
         result[test_id] = {
             "total_questions": int(question_counts.get(test_id, 0)),
             "user_status": attempt_view_state["user_status"],
+            "ui_status": attempt_view_state["ui_status"],
             "progress_state": attempt_view_state["progress_state"],
             "attempt_state": attempt_view_state["attempt_state"],
             "can_start": attempt_view_state["can_start"],

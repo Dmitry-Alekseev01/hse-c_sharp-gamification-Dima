@@ -13,16 +13,23 @@ router = APIRouter()
 def _ensure_metrics_access(x_metrics_token: str | None) -> None:
     expected_token = settings.get_monitoring_metrics_token()
     if not expected_token:
-        return
+        if settings.app_env.lower() == "test":
+            return
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Metrics token is not configured",
+        )
     if x_metrics_token != expected_token:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Metrics access denied",
         )
 
+
 @router.get("/live")
 async def liveness():
     return {"status": "ok"}
+
 
 @router.get("/ready")
 async def readiness():
