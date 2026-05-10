@@ -2,6 +2,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cache.redis_cache import (
+    NS_LEVELS,
     NS_TEST_SUMMARY,
     USER_LEVEL_CONTEXT_TTL,
     cache_key_user_level_context,
@@ -93,11 +94,13 @@ async def get_user_level_context(db: AsyncSession, current_user: User) -> tuple[
     cache_key = None
     try:
         summary_version = await get_cache_namespace_version(NS_TEST_SUMMARY)
+        levels_version = await get_cache_namespace_version(NS_LEVELS)
         attempts_version = await get_user_attempts_state_version(current_user.id)
         cache_key = cache_key_user_level_context(
             user_id=current_user.id,
             summary_version=summary_version,
             attempts_version=attempts_version,
+            levels_version=levels_version,
         )
         cached = await cache_get(cache_key)
         if isinstance(cached, dict):

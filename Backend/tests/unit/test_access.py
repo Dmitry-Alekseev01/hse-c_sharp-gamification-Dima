@@ -1,6 +1,7 @@
 import pytest
 from fastapi import HTTPException
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 pytestmark = pytest.mark.asyncio
 
@@ -143,3 +144,53 @@ async def test_ensure_teacher_or_admin_can_access_user_restricts_teacher_to_mana
     with pytest.raises(HTTPException) as exc_info:
         await access.ensure_teacher_or_admin_can_access_user(db, teacher, unmanaged_student.id)
     assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_user_level_context_cache_key_includes_levels_namespace_version(monkeypatch):
+    user = User(id=42, username="cache_levels_user", password_hash="x", role="user")
+    captured: dict[str, object] = {}
+
+    async def _fake_get_cache_namespace_version(namespace: str) -> int:
+        if namespace == access.NS_TEST_SUMMARY:
+            return 3
+        if namespace == access.NS_LEVELS:
+            return 7
+        return 0
+
+    async def _fake_get_user_attempts_state_version(user_id: int) -> int:
+        assert user_id == 42
+        return 5
+
+    async def _fake_cache_get(key: str):
+        captured["get_key"] = key
+        return None
+
+    async def _fake_cache_set(key: str, value, ttl: int):
+        captured["set_key"] = key
+        captured["set_value"] = value
+        captured["set_ttl"] = ttl
+
+    async def _fake_get_access_points_for_user(db, user_id: int) -> float:
+        del db
+        assert user_id == 42
+        return 12.0
+
+    async def _fake_get_current_level_for_points(db, points: float):
+        del db
+        assert points == 12.0
+        return SimpleNamespace(id=2)
+
+    monkeypatch.setattr(access, "get_cache_namespace_version", _fake_get_cache_namespace_version)
+    monkeypatch.setattr(access, "get_user_attempts_state_version", _fake_get_user_attempts_state_version)
+    monkeypatch.setattr(access, "cache_get", _fake_cache_get)
+    monkeypatch.setattr(access, "cache_set", _fake_cache_set)
+    monkeypatch.setattr(analytics_repo, "get_access_points_for_user", _fake_get_access_points_for_user)
+    monkeypatch.setattr(access.level_repo, "get_current_level_for_points", _fake_get_current_level_for_points)
+
+    total_points, level_id = await access.get_user_level_context(db=None, current_user=user)
+
+    assert total_points == 12.0
+    assert level_id == 2
+    assert "analytics:user-level:v3:a5:l7:u42" in str(captured["get_key"])
+    assert captured["set_key"] == captured["get_key"]

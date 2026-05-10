@@ -9,6 +9,7 @@ from app.admin.views import (
     ChallengeAdminView,
     ChoiceAdminView,
     GroupMembershipAdminView,
+    LevelAdminView,
     MaterialAdminView,
     MaterialAttachmentAdminView,
     MaterialBlockAdminView,
@@ -401,6 +402,7 @@ class _FakeAsyncSessionCtx:
     def __init__(self, user):
         self._user = user
         self.committed = False
+        self.no_autoflush = _NoopContext()
 
     async def __aenter__(self):
         return self
@@ -414,6 +416,49 @@ class _FakeAsyncSessionCtx:
 
     async def commit(self):
         self.committed = True
+
+
+class _NoopContext:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+async def test_ai_job_admin_before_create_uses_dedicated_async_session_for_snapshot(monkeypatch):
+    admin = SimpleNamespace(id=404, role="admin", username="admin404@example.com")
+    request = _DummyActionRequest(user_id=admin.id, form_data={})
+    obj = AIGamificationJob()
+    captured: dict[str, object] = {}
+
+    async def _fake_snapshot_builder(session, payload, current_user):
+        captured["session"] = session
+        captured["source_type"] = payload.source_type.value
+        captured["source_id"] = payload.source_id
+        captured["user_id"] = current_user.id
+        captured["user_role"] = current_user.role
+        return "snapshot-text"
+
+    fake_ctx = _FakeAsyncSessionCtx(admin)
+    monkeypatch.setattr("app.admin.views_gamification.AsyncSessionLocal", lambda: fake_ctx)
+    monkeypatch.setattr("app.admin.views_gamification.build_source_snapshot", _fake_snapshot_builder)
+
+    view = AIGamificationJobReadOnlyView(AIGamificationJob)
+    await view.before_create(
+        request,
+        data={"source_type": "material", "source_id": 9, "language": "ru", "constraints_json": {"": ""}},
+        obj=obj,
+    )
+
+    assert captured["session"] is fake_ctx
+    assert captured["source_type"] == "material"
+    assert captured["source_id"] == 9
+    assert captured["user_id"] == 404
+    assert captured["user_role"] == "admin"
+    assert obj.created_by_user_id == 404
+    assert obj.status == "pending"
+    assert obj.source_snapshot == "snapshot-text"
 
 
 async def test_ai_job_admin_apply_row_action_works_with_sync_request_session(monkeypatch):
@@ -621,3 +666,24 @@ async def test_test_admin_view_validate_teacher_cannot_link_foreign_material(db)
                 "materials": [{"id": foreign_material.id}],
             },
         )
+
+
+async def test_level_admin_view_after_actions_invalidate_related_caches(monkeypatch):
+    captured_calls: list[tuple[str, ...]] = []
+
+    async def _fake_bump_cache_namespace(*namespaces: str):
+        captured_calls.append(tuple(namespaces))
+
+    monkeypatch.setattr("app.admin.views_content.bump_cache_namespace", _fake_bump_cache_namespace)
+
+    view = LevelAdminView(Level)
+    request = _DummyAdminRequest(db=object(), user_id=1)
+    level = Level(name="Cache Level", required_points=1)
+
+    await view.after_create(request, level)
+    await view.after_edit(request, level)
+    await view.after_delete(request, level)
+
+    assert len(captured_calls) == 3
+    for call in captured_calls:
+        assert set(call) == {"levels", "tests", "materials"}
