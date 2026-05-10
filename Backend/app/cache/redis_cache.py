@@ -13,6 +13,7 @@ NS_TEST_CONTENT = "test_content"
 NS_TEST_SUMMARY = "test_summary"
 NS_QUESTIONS = "questions"
 NS_LEADERBOARD = "leaderboard"
+NS_LEVELS = "levels"
 
 MATERIALS_LIST_TTL = 300
 MATERIAL_DETAIL_TTL = 600
@@ -224,8 +225,9 @@ def cache_key_user_level_context(
     user_id: int,
     summary_version: int = 0,
     attempts_version: int = 0,
+    levels_version: int = 0,
 ) -> str:
-    return f"analytics:user-level:v{summary_version}:a{attempts_version}:u{user_id}"
+    return f"analytics:user-level:v{summary_version}:a{attempts_version}:l{levels_version}:u{user_id}"
 
 
 def cache_key_user_progress(*, user_id: int, summary_version: int = 0) -> str:

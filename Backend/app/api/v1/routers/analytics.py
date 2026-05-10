@@ -11,11 +11,13 @@ from app.api.deps import get_db
 from app.cache.redis_cache import (
     LEARNING_DASHBOARD_TTL,
     LEADERBOARD_TTL,
+    NS_LEVELS,
     NS_MATERIALS,
     NS_LEADERBOARD,
     NS_TESTS,
     NS_TEST_SUMMARY,
     USER_PROGRESS_TTL,
+    bump_cache_namespace,
     cache_key_learning_dashboard,
     cache_key_learning_dashboard_stale,
     cache_key_user_progress,
@@ -91,6 +93,14 @@ def _to_naive_utc(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
+
+
+async def _invalidate_level_related_caches() -> None:
+    try:
+        await bump_cache_namespace(NS_LEVELS, NS_TESTS, NS_MATERIALS)
+    except Exception:
+        # Cache invalidation failure must not break admin level CRUD.
+        pass
 
 
 def _assert_group_access(current_user: User, group) -> None:
@@ -1015,6 +1025,7 @@ async def create_level(
         )
     except IntegrityError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to create level") from exc
+    await _invalidate_level_related_caches()
     return level
 
 
@@ -1076,6 +1087,7 @@ async def update_level(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update level") from exc
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Level not found")
+    await _invalidate_level_related_caches()
     return updated
 
 
@@ -1094,6 +1106,7 @@ async def delete_level(
         ) from exc
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Level not found")
+    await _invalidate_level_related_caches()
     return {}
 
 

@@ -458,6 +458,49 @@ async def test_level_admin_full_crud(client, db):
     assert not_found_response.status_code == 404, not_found_response.text
 
 
+async def test_level_admin_crud_invalidates_level_related_caches(client, db, monkeypatch):
+    captured_calls: list[tuple[str, ...]] = []
+
+    async def _fake_bump_cache_namespace(*namespaces: str):
+        captured_calls.append(tuple(namespaces))
+
+    monkeypatch.setattr("app.api.v1.routers.analytics.bump_cache_namespace", _fake_bump_cache_namespace)
+
+    admin = await seed_user(
+        db,
+        username="level_admin_cache@example.com",
+        password="admin123",
+        role="admin",
+        full_name="Level Admin Cache",
+    )
+    admin_token = await login(client, admin.username, "admin123")
+
+    create_response = await client.post(
+        "/api/v1/analytics/levels",
+        headers=auth_headers(admin_token),
+        json={"name": "Cache Level", "required_points": 123},
+    )
+    assert create_response.status_code == 201, create_response.text
+    level_id = create_response.json()["id"]
+
+    update_response = await client.patch(
+        f"/api/v1/analytics/levels/{level_id}",
+        headers=auth_headers(admin_token),
+        json={"required_points": 124},
+    )
+    assert update_response.status_code == 200, update_response.text
+
+    delete_response = await client.delete(
+        f"/api/v1/analytics/levels/{level_id}",
+        headers=auth_headers(admin_token),
+    )
+    assert delete_response.status_code == 204, delete_response.text
+
+    assert len(captured_calls) == 3
+    for call in captured_calls:
+        assert set(call) == {"levels", "tests", "materials"}
+
+
 async def test_achievement_definition_admin_full_crud(client, db):
     admin = await seed_user(
         db,

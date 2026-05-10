@@ -6,7 +6,7 @@ from starlette.requests import Request
 from starlette_admin.exceptions import FormValidationError
 from starlette_admin.fields import EnumField
 
-from app.cache.redis_cache import NS_MATERIALS, NS_TEST_CONTENT, NS_TEST_SUMMARY, NS_TESTS, bump_cache_namespace
+from app.cache.redis_cache import NS_LEVELS, NS_MATERIALS, NS_TEST_CONTENT, NS_TEST_SUMMARY, NS_TESTS, bump_cache_namespace
 from app.core.material_taxonomy import MATERIAL_ATTACHMENT_KIND_VALUES, MATERIAL_BLOCK_TYPE_VALUES
 from app.models.choice import Choice
 from app.models.group import GroupMembership, StudyGroup
@@ -524,6 +524,24 @@ class LevelAdminView(AdminAuditedModelView):
     fields = ["id", "name", "required_points", "description"]
     searchable_fields = ["name", "description"]
     sortable_fields = ["id", "name", "required_points"]
+
+    async def _invalidate_level_related_caches(self) -> None:
+        try:
+            await bump_cache_namespace(NS_LEVELS, NS_TESTS, NS_MATERIALS)
+        except Exception:
+            logger.exception("admin_cache_invalidate_failed model=Level")
+
+    async def after_create(self, request: Request, obj: Any) -> None:
+        await super().after_create(request, obj)
+        await self._invalidate_level_related_caches()
+
+    async def after_edit(self, request: Request, obj: Any) -> None:
+        await super().after_edit(request, obj)
+        await self._invalidate_level_related_caches()
+
+    async def after_delete(self, request: Request, obj: Any) -> None:
+        await super().after_delete(request, obj)
+        await self._invalidate_level_related_caches()
 
     async def validate(self, request: Request, data: dict[str, Any]) -> None:
         del request

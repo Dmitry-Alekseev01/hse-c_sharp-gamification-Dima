@@ -411,12 +411,6 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
         if admin_user_id is None:
             raise FormValidationError({"_schema": ["Unable to resolve admin identity"]})
 
-        admin_user = getattr(request.state, "admin_user", None)
-        if admin_user is None or self._to_int_or_none(getattr(admin_user, "id", None)) is None:
-            admin_user = await self._scalar_one_or_none(request, select(User).where(User.id == int(admin_user_id)))
-        if admin_user is None:
-            raise FormValidationError({"_schema": ["Unable to resolve admin identity"]})
-
         # Populate required fields on persisted object before any extra query.
         # Otherwise, query-triggered autoflush may fail on NOT NULL constraints.
         obj.created_by_user_id = int(admin_user_id)
@@ -446,6 +440,11 @@ class AIGamificationJobReadOnlyView(TeacherAccessibleModelView):
             # 1) sync/async session mismatch in Starlette Admin middleware,
             # 2) query-triggered autoflush on the admin write session.
             async with AsyncSessionLocal() as snapshot_session:
+                admin_user = (
+                    await snapshot_session.execute(select(User).where(User.id == int(admin_user_id)))
+                ).scalar_one_or_none()
+                if admin_user is None:
+                    raise FormValidationError({"_schema": ["Unable to resolve admin identity"]})
                 with snapshot_session.no_autoflush:
                     source_snapshot = await build_source_snapshot(snapshot_session, payload, admin_user)
         except Exception as exc:
