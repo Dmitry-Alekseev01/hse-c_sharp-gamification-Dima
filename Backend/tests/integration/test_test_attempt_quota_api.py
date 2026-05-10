@@ -62,6 +62,7 @@ async def test_attempt_quota_endpoint_and_retry_limit(client, db):
     assert quota_initial.json()["completed_attempts"] == 0
     assert quota_initial.json()["remaining_attempts"] == 2
     assert quota_initial.json()["has_active_attempt"] is False
+    assert quota_initial.json()["ui_status"] == "not_started"
     assert quota_initial.json()["attempt_state"] == "can_start"
     assert quota_initial.json()["can_start"] is True
     assert quota_initial.json()["can_resume"] is False
@@ -73,6 +74,7 @@ async def test_attempt_quota_endpoint_and_retry_limit(client, db):
     assert start_first.status_code == 201, start_first.text
     first_attempt_id = start_first.json()["id"]
     assert start_first.json()["action"] == "started"
+    assert start_first.json()["ui_status"] == "in_progress"
 
     start_first_again = await client.post(
         f"/api/v1/tests/{test_id}/attempts/start",
@@ -88,6 +90,7 @@ async def test_attempt_quota_endpoint_and_retry_limit(client, db):
     )
     assert quota_with_active.status_code == 200, quota_with_active.text
     assert quota_with_active.json()["has_active_attempt"] is True
+    assert quota_with_active.json()["ui_status"] == "in_progress"
     assert quota_with_active.json()["remaining_attempts"] == 2
     assert quota_with_active.json()["attempt_state"] == "can_resume"
     assert quota_with_active.json()["can_resume"] is True
@@ -104,6 +107,7 @@ async def test_attempt_quota_endpoint_and_retry_limit(client, db):
     )
     assert quota_after_first.status_code == 200, quota_after_first.text
     assert quota_after_first.json()["completed_attempts"] == 1
+    assert quota_after_first.json()["ui_status"] == "completed"
     assert quota_after_first.json()["remaining_attempts"] == 1
     assert quota_after_first.json()["has_active_attempt"] is False
     assert quota_after_first.json()["attempt_state"] == "can_start"
@@ -266,4 +270,3 @@ async def test_attempts_resume_after_teacher_increases_max_attempts(client, db):
     assert resumed_start.status_code == 201, resumed_start.text
     assert resumed_start.json()["id"] != first_attempt_id
     assert resumed_start.json()["action"] == "started"
-

@@ -11,13 +11,11 @@ from app.api.deps import get_db
 from app.cache.redis_cache import (
     LEARNING_DASHBOARD_TTL,
     LEADERBOARD_TTL,
-    NS_LEVELS,
     NS_MATERIALS,
     NS_LEADERBOARD,
     NS_TESTS,
     NS_TEST_SUMMARY,
     USER_PROGRESS_TTL,
-    bump_cache_namespace,
     cache_key_learning_dashboard,
     cache_key_learning_dashboard_stale,
     cache_key_user_progress,
@@ -68,13 +66,11 @@ from app.schemas.analytics import (
     UnlockRuleSourceType,
     UnlockRuleUpdate,
 )
-from app.schemas.level import LevelCreate, LevelRead, LevelUpdate
 from app.repositories import (
     achievement_repo,
     analytics_repo,
     challenge_repo,
     group_repo,
-    level_repo,
     material_repo,
     reward_repo,
     season_repo,
@@ -95,14 +91,6 @@ def _to_naive_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC).replace(tzinfo=None)
 
 
-async def _invalidate_level_related_caches() -> None:
-    try:
-        await bump_cache_namespace(NS_LEVELS, NS_TESTS, NS_MATERIALS)
-    except Exception:
-        # Cache invalidation failure must not break admin level CRUD.
-        pass
-
-
 def _assert_group_access(current_user: User, group) -> None:
     if group is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
@@ -121,11 +109,6 @@ def _validate_unlock_rule_constraints(*, source_type: str, min_level_required: i
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="min_level_required is required for source_type=level",
         )
-
-
-def _validate_level_constraints(*, required_points: int) -> None:
-    if required_points < 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="required_points must be >= 0")
 
 
 @router.get("/user/{user_id}", response_model=AnalyticsRead, status_code=status.HTTP_200_OK)
@@ -220,6 +203,7 @@ async def get_my_learning_dashboard(
         for test in tests:
             state = state_map.get(test.id, {})
             user_status = str(state.get("user_status", "not_started"))
+            ui_status = str(state.get("ui_status", user_status))
             progress_state = str(state.get("progress_state", user_status))
             attempt_state = str(state.get("attempt_state", "can_start"))
             can_start = bool(state.get("can_start", True))
@@ -248,6 +232,7 @@ async def get_my_learning_dashboard(
                     "title": test.title,
                     "deadline": test.deadline,
                     "user_status": user_status,
+                    "ui_status": ui_status,
                     "progress_state": progress_state,
                     "attempt_state": attempt_state,
                     "can_start": can_start,
@@ -998,116 +983,6 @@ async def analytics_overview(
     _: User = Depends(require_roles("teacher", "admin")),
 ):
     return await analytics_repo.analytics_overview(db)
-
-
-@router.post("/levels", response_model=LevelRead, status_code=status.HTTP_201_CREATED)
-async def create_level(
-    payload: LevelCreate,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin")),
-):
-    _validate_level_constraints(required_points=payload.required_points)
-
-    existing_by_name = await level_repo.get_level_by_name(db, payload.name)
-    if existing_by_name is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Level name already exists")
-
-    existing_by_required_points = await level_repo.get_level_by_required_points(db, payload.required_points)
-    if existing_by_required_points is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="required_points must be unique")
-
-    try:
-        level = await level_repo.create_level(
-            db,
-            name=payload.name,
-            required_points=payload.required_points,
-            description=payload.description,
-        )
-    except IntegrityError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to create level") from exc
-    await _invalidate_level_related_caches()
-    return level
-
-
-@router.get("/levels", response_model=List[LevelRead], status_code=status.HTTP_200_OK)
-async def list_levels(
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    """
-    Return configured levels (id, name, required_points, description).
-    """
-    lvls = await level_repo.list_levels(db)
-    return lvls
-
-
-@router.get("/levels/{level_id}", response_model=LevelRead, status_code=status.HTTP_200_OK)
-async def get_level(
-    level_id: int,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    level = await level_repo.get_level_by_id(db, level_id)
-    if level is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Level not found")
-    return level
-
-
-@router.patch("/levels/{level_id}", response_model=LevelRead, status_code=status.HTTP_200_OK)
-async def update_level(
-    level_id: int,
-    payload: LevelUpdate,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin")),
-):
-    level = await level_repo.get_level_by_id(db, level_id)
-    if level is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Level not found")
-
-    changes = payload.model_dump(exclude_unset=True)
-    if not changes:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one field must be provided")
-
-    next_name = changes.get("name", level.name)
-    if next_name != level.name:
-        existing_by_name = await level_repo.get_level_by_name(db, next_name)
-        if existing_by_name is not None and existing_by_name.id != level_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Level name already exists")
-
-    next_required_points = changes.get("required_points", level.required_points)
-    _validate_level_constraints(required_points=next_required_points)
-    if next_required_points != level.required_points:
-        existing_by_required_points = await level_repo.get_level_by_required_points(db, next_required_points)
-        if existing_by_required_points is not None and existing_by_required_points.id != level_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="required_points must be unique")
-
-    try:
-        updated = await level_repo.update_level(db, level_id, **changes)
-    except IntegrityError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to update level") from exc
-    if updated is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Level not found")
-    await _invalidate_level_related_caches()
-    return updated
-
-
-@router.delete("/levels/{level_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_level(
-    level_id: int,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin")),
-):
-    try:
-        deleted = await level_repo.delete_level(db, level_id)
-    except IntegrityError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Level is referenced by existing tests/materials",
-        ) from exc
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Level not found")
-    await _invalidate_level_related_caches()
-    return {}
 
 
 @router.get("/level/{level_id}/below", response_model=List[UserBriefRead], status_code=status.HTTP_200_OK)

@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 import json
 from typing import Optional
 
+from sqlalchemy import select
+
 from app.api.deps import add_post_commit_task
 from app.repositories import answer_repo, analytics_repo, test_attempt_repo
 from app.models.answer import Answer
@@ -163,6 +165,185 @@ async def submit_answer(
         add_post_commit_task(session, enqueue_open_grading_after_commit)
 
     return graded if graded is not None else ans
+
+
+async def submit_answers_batch_for_attempt(
+    session,
+    *,
+    user_id: int,
+    test_id: int,
+    attempt_id: int,
+    answers: list[tuple[int, str]],
+) -> None:
+    """
+    Optimized batch submit for attempt payloads.
+    Processes answers in-memory with one prefetch pass and runs heavy side effects once.
+    """
+    if not answers:
+        return
+
+    question_ids = [int(question_id) for question_id, _ in answers]
+    unique_question_ids = list(dict.fromkeys(question_ids))
+
+    question_rows = (
+        await session.execute(
+            select(Question).where(Question.id.in_(unique_question_ids))
+        )
+    ).scalars().all()
+    question_map = {int(question.id): question for question in question_rows}
+
+    normalized_items: list[tuple[Question, str, str, int | None]] = []
+    choice_ids: set[int] = set()
+
+    for question_id, payload in answers:
+        normalized_question_id = int(question_id)
+        question = question_map.get(normalized_question_id)
+        if question is None:
+            raise LookupError("Question not found")
+        if int(question.test_id) != int(test_id):
+            raise ValueError("Question does not belong to the specified test")
+
+        normalized_payload = "" if payload is None else str(payload)
+        trimmed_payload = normalized_payload.strip()
+
+        parsed_choice_id: int | None = None
+        if not bool(question.is_open_answer) and trimmed_payload.lower() not in {"", "null", "none"}:
+            try:
+                parsed_choice_id = int(trimmed_payload)
+            except (TypeError, ValueError):
+                raise ValueError("Closed question answer must be a valid choice id")
+            choice_ids.add(parsed_choice_id)
+
+        normalized_items.append((question, normalized_payload, trimmed_payload, parsed_choice_id))
+
+    choice_map: dict[int, Choice] = {}
+    if choice_ids:
+        choice_rows = (
+            await session.execute(
+                select(Choice).where(Choice.id.in_(choice_ids))
+            )
+        ).scalars().all()
+        choice_map = {int(choice.id): choice for choice in choice_rows}
+
+    existing_rows = (
+        await session.execute(
+            select(Answer).where(
+                Answer.user_id == user_id,
+                Answer.test_id == test_id,
+                Answer.attempt_id == attempt_id,
+                Answer.question_id.in_(unique_question_ids),
+            )
+        )
+    ).scalars().all()
+    answers_by_question_id: dict[int, Answer] = {
+        int(answer.question_id): answer for answer in existing_rows
+    }
+
+    open_answers_to_queue: list[Answer] = []
+    total_points_delta = 0.0
+    submitted_answers_count = 0
+
+    for question, normalized_payload, trimmed_payload, parsed_choice_id in normalized_items:
+        submitted_answers_count += 1
+        is_open = bool(question.is_open_answer)
+        score: float | None = None
+
+        if not is_open:
+            if trimmed_payload.lower() in {"", "null", "none"}:
+                normalized_payload = ""
+                score = 0.0
+            else:
+                if parsed_choice_id is None:
+                    raise ValueError("Closed question answer must be a valid choice id")
+                choice = choice_map.get(parsed_choice_id)
+                if choice is None or int(choice.question_id) != int(question.id):
+                    raise ValueError("Selected choice does not belong to the specified question")
+                score = float(question.points) if bool(choice.is_correct) else 0.0
+        else:
+            if trimmed_payload == "":
+                score = 0.0
+            else:
+                score = None
+
+        existing_answer = answers_by_question_id.get(int(question.id))
+        previous_score = float(existing_answer.score or 0.0) if existing_answer is not None else 0.0
+
+        if existing_answer is None:
+            existing_answer = Answer(
+                user_id=user_id,
+                test_id=test_id,
+                attempt_id=attempt_id,
+                question_id=question.id,
+                answer_payload=normalized_payload,
+            )
+            session.add(existing_answer)
+            answers_by_question_id[int(question.id)] = existing_answer
+        else:
+            existing_answer.answer_payload = normalized_payload
+
+        existing_answer.score = score
+        existing_answer.graded_by = None
+        existing_answer.graded_at = None
+
+        total_points_delta += float(score or 0.0) - previous_score
+
+        if is_open and trimmed_payload != "":
+            open_answers_to_queue.append(existing_answer)
+
+    await session.flush()
+
+    await analytics_repo.create_or_update_analytics(
+        session,
+        user_id=user_id,
+        points_delta=total_points_delta,
+        mark_active=True,
+        reason_code="attempt_batch_submit",
+        source_type="test_attempt",
+        source_id=attempt_id,
+        metadata={
+            "test_id": test_id,
+            "attempt_id": attempt_id,
+            "answers_count": submitted_answers_count,
+        },
+    )
+
+    await record_event(
+        session,
+        user_id=user_id,
+        event_type=ChallengeEventType.ANSWER_SUBMITTED,
+        increment=submitted_answers_count,
+    )
+    await record_event(
+        session,
+        user_id=user_id,
+        event_type=ChallengeEventType.STREAK_DAY,
+        increment=submitted_answers_count,
+    )
+
+    async def invalidate_after_commit() -> None:
+        try:
+            await bump_cache_namespace(NS_LEADERBOARD, NS_TEST_SUMMARY)
+        except Exception:
+            pass
+
+    add_post_commit_task(session, invalidate_after_commit)
+
+    if open_answers_to_queue:
+        queued_answer_ids = [int(answer.id) for answer in open_answers_to_queue if answer.id is not None]
+
+        async def enqueue_open_grading_after_commit() -> None:
+            try:
+                r = get_redis_client()
+                for answer_id in queued_answer_ids:
+                    job = {"answer_id": answer_id, "user_id": user_id}
+                    await r.rpush("grading:open", json.dumps(job))
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue open-answer grading jobs",
+                    extra={"answer_ids": queued_answer_ids},
+                )
+
+        add_post_commit_task(session, enqueue_open_grading_after_commit)
 
 
 async def manual_grade_open_answer(session, answer_id: int, grader_id: int, score: float) -> Answer:

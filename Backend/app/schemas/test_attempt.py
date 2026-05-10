@@ -30,6 +30,7 @@ class TestAttemptQuotaRead(BaseModel):
     completed_attempts: int
     remaining_attempts: int
     has_active_attempt: bool
+    ui_status: Literal["not_started", "in_progress", "completed"] = "not_started"
     progress_state: Literal["not_started", "in_progress", "completed"] = "not_started"
     attempt_state: Literal["can_start", "can_resume", "blocked"] = "can_start"
     can_start: bool = True
@@ -49,6 +50,7 @@ class TestAttemptStartRead(TestAttemptRead):
     completed_attempts: int
     remaining_attempts: int
     has_active_attempt: bool
+    ui_status: Literal["not_started", "in_progress", "completed"] = "not_started"
     progress_state: Literal["not_started", "in_progress", "completed"] = "not_started"
     attempt_state: Literal["can_start", "can_resume", "blocked"] = "can_start"
     can_start: bool = True

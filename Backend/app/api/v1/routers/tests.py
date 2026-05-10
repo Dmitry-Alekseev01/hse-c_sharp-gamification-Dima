@@ -50,7 +50,7 @@ from app.schemas.test_content import TestContentRead, TestContentWrite
 from app.repositories import analytics_repo, answer_repo, test_repo, test_attempt_repo
 from app.repositories import question_repo
 from app.services import test_service
-from app.services.answer_service import submit_answer
+from app.services.answer_service import submit_answers_batch_for_attempt
 from app.services.challenge_service import ChallengeEventType, record_event
 from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user, utcnow
 
@@ -86,6 +86,7 @@ async def _build_attempt_quota_payload(
         completed_attempts=attempt_state["completed_attempts"],
         remaining_attempts=attempt_state["remaining_attempts"],
         has_active_attempt=attempt_state["has_active_attempt"],
+        ui_status=attempt_state["ui_status"],
         progress_state=attempt_state["progress_state"],
         attempt_state=attempt_state["attempt_state"],
         can_start=attempt_state["can_start"],
@@ -269,6 +270,7 @@ async def list_tests_with_my_state(
                     **base,
                     "total_questions": int(state.get("total_questions", 0)),
                     "user_status": state.get("user_status", "not_started"),
+                    "ui_status": state.get("ui_status", state.get("user_status", "not_started")),
                     "progress_state": state.get("progress_state", state.get("user_status", "not_started")),
                     "attempt_state": state.get("attempt_state", "can_start"),
                     "can_start": bool(state.get("can_start", True)),
@@ -500,6 +502,7 @@ async def start_test_attempt(
             "completed_attempts": quota.completed_attempts,
             "remaining_attempts": quota.remaining_attempts,
             "has_active_attempt": quota.has_active_attempt,
+            "ui_status": quota.ui_status,
             "progress_state": quota.progress_state,
             "attempt_state": quota.attempt_state,
             "can_start": quota.can_start,
@@ -525,6 +528,7 @@ async def start_test_attempt(
                 "attempt_state": quota.attempt_state,
                 "can_start": quota.can_start,
                 "can_resume": quota.can_resume,
+                "ui_status": quota.ui_status,
                 "progress_state": quota.progress_state,
                 "max_attempts": quota.max_attempts,
                 "completed_attempts": quota.completed_attempts,
@@ -548,6 +552,7 @@ async def start_test_attempt(
                 "attempt_state": quota.attempt_state,
                 "can_start": quota.can_start,
                 "can_resume": quota.can_resume,
+                "ui_status": quota.ui_status,
                 "progress_state": quota.progress_state,
                 "max_attempts": quota.max_attempts,
                 "completed_attempts": quota.completed_attempts,
@@ -633,26 +638,23 @@ async def submit_test_attempt(
             await bump_user_attempts_state_version(attempt.user_id)
         return attempt
 
-    for item in payload.answers:
-        try:
-            await submit_answer(
-                db,
-                attempt.user_id,
-                attempt.test_id,
-                item.question_id,
-                item.answer_payload,
-                attempt_id=attempt.id,
-                validate_attempt=False,
-            )
-        except LookupError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-        except IntegrityError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Concurrent answer update conflict; please retry",
-            ) from exc
+    try:
+        await submit_answers_batch_for_attempt(
+            db,
+            user_id=attempt.user_id,
+            test_id=attempt.test_id,
+            attempt_id=attempt.id,
+            answers=[(item.question_id, item.answer_payload) for item in payload.answers],
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Concurrent answer update conflict; please retry",
+        ) from exc
 
     completed_attempt = await test_attempt_repo.complete_attempt(db, attempt)
     await bump_user_attempts_state_version(completed_attempt.user_id)

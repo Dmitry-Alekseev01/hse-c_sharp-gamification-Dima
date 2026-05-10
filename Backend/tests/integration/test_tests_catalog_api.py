@@ -208,6 +208,7 @@ async def test_tests_catalog_me_returns_aggregated_states_for_current_user(clien
     completed_item = next(item for item in items if item["id"] == completed_test["id"])
     assert completed_item["total_questions"] == 1
     assert completed_item["user_status"] == "completed"
+    assert completed_item["ui_status"] == "completed"
     assert completed_item["progress_state"] == "completed"
     assert completed_item["attempt_state"] == "can_start"
     assert completed_item["can_start"] is True
@@ -224,6 +225,7 @@ async def test_tests_catalog_me_returns_aggregated_states_for_current_user(clien
     in_progress_item = next(item for item in items if item["id"] == in_progress_test["id"])
     assert in_progress_item["total_questions"] == 1
     assert in_progress_item["user_status"] == "in_progress"
+    assert in_progress_item["ui_status"] == "in_progress"
     assert in_progress_item["progress_state"] == "in_progress"
     assert in_progress_item["attempt_state"] == "can_resume"
     assert in_progress_item["can_start"] is False
@@ -239,6 +241,7 @@ async def test_tests_catalog_me_returns_aggregated_states_for_current_user(clien
     not_started_item = next(item for item in items if item["id"] == not_started_test["id"])
     assert not_started_item["total_questions"] == 1
     assert not_started_item["user_status"] == "not_started"
+    assert not_started_item["ui_status"] == "not_started"
     assert not_started_item["progress_state"] == "not_started"
     assert not_started_item["attempt_state"] == "can_start"
     assert not_started_item["can_start"] is True

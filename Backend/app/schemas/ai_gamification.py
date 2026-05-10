@@ -171,8 +171,8 @@ class AIGamifyApplyRequest(BaseModel):
     def validate_target(self) -> "AIGamifyApplyRequest":
         has_type = self.target_type is not None
         has_id = self.target_id is not None
-        if has_type != has_id:
-            raise ValueError("target_type and target_id must be provided together")
+        if has_id and not has_type:
+            raise ValueError("target_type is required when target_id is provided")
         if self.target_id is not None and int(self.target_id) < 1:
             raise ValueError("target_id must be >= 1")
         return self

@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 from typing import Any
 
-import anyio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -50,14 +49,16 @@ class AdminAuditedModelView(ModelView):
         session = request.state.session
         if isinstance(session, AsyncSession):
             return (await session.execute(stmt)).scalar_one_or_none()
-        result = await anyio.to_thread.run_sync(session.execute, stmt)  # type: ignore[arg-type]
+        # Admin is configured with a synchronous SQLAlchemy engine.
+        # Keep sync-session calls on the same thread to avoid session cross-thread hazards.
+        result = session.execute(stmt)  # type: ignore[call-arg]
         return result.scalar_one_or_none()
 
     async def _scalars_all(self, request: Request, stmt) -> list[Any]:
         session = request.state.session
         if isinstance(session, AsyncSession):
             return list((await session.execute(stmt)).scalars().all())
-        result = await anyio.to_thread.run_sync(session.execute, stmt)  # type: ignore[arg-type]
+        result = session.execute(stmt)  # type: ignore[call-arg]
         return list(result.scalars().all())
 
     async def _commit_session(self, request: Request) -> None:
@@ -65,14 +66,14 @@ class AdminAuditedModelView(ModelView):
         if isinstance(session, AsyncSession):
             await session.commit()
             return
-        await anyio.to_thread.run_sync(session.commit)  # type: ignore[arg-type]
+        session.commit()  # type: ignore[call-arg]
 
     async def _rollback_session(self, request: Request) -> None:
         session = request.state.session
         if isinstance(session, AsyncSession):
             await session.rollback()
             return
-        await anyio.to_thread.run_sync(session.rollback)  # type: ignore[arg-type]
+        session.rollback()  # type: ignore[call-arg]
 
     @staticmethod
     def _humanize_action_error(exc: Exception) -> str:

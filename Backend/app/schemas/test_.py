@@ -48,6 +48,7 @@ class TestRead(BaseModel):
 class TestCardRead(TestRead):
     total_questions: int = 0
     user_status: Literal["not_started", "in_progress", "completed"] = "not_started"
+    ui_status: Literal["not_started", "in_progress", "completed"] = "not_started"
     progress_state: Literal["not_started", "in_progress", "completed"] = "not_started"
     attempt_state: Literal["can_start", "can_resume", "blocked"] = "can_start"
     can_start: bool = True

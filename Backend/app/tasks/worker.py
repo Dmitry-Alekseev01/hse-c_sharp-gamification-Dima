@@ -15,30 +15,86 @@ from app.repositories import analytics_repo, test_attempt_repo
 from app.services.ai_gamification_service import AI_GAMIFY_QUEUE, process_ai_gamification_job
 
 logger = logging.getLogger("worker")
+OPEN_GRADING_MAX_RETRIES = 5
+
+
+def _normalize_open_grading_payload(job_payload: str) -> dict:
+    data = json.loads(job_payload)
+    if not isinstance(data, dict):
+        raise ValueError("Open grading payload must be a JSON object")
+    return data
+
+
+async def _requeue_open_grading_job(data: dict, retries: int) -> None:
+    payload = dict(data)
+    payload["retries"] = int(retries)
+    redis = get_redis_client()
+    await redis.rpush("grading:open", json.dumps(payload))
 
 
 async def process_job(job_payload: str) -> None:
     try:
-        data = json.loads(job_payload)
+        data = _normalize_open_grading_payload(job_payload)
     except Exception:
         logger.exception("Invalid job payload (not json): %s", job_payload)
         return
 
-    answer_id = data.get("answer_id")
+    answer_id_raw = data.get("answer_id")
+    retries = int(data.get("retries") or 0)
+    try:
+        answer_id = int(answer_id_raw) if answer_id_raw is not None else None
+    except (TypeError, ValueError):
+        answer_id = None
     user_id = data.get("user_id")
-    logger.info("Open answer queued for manual grading: answer_id=%s user_id=%s", answer_id, user_id)
+    logger.info(
+        "Open answer queued for manual grading: answer_id=%s user_id=%s retries=%s",
+        answer_id,
+        user_id,
+        retries,
+    )
 
     if answer_id is None:
         logger.warning("Job missing answer_id: %s", data)
         return
 
-    # ensure record exists (do not modify schema here)
+    # Ensure record exists and run light post-process hooks for stable state.
     async with AsyncSessionLocal() as session:
-        ans: Optional[Answer] = await session.get(Answer, answer_id)
-        if ans:
-            logger.info("Found answer %s for manual grading (user_id=%s)", answer_id, ans.user_id)
-        else:
-            logger.warning("Answer %s not found in DB", answer_id)
+        try:
+            ans: Optional[Answer] = await session.get(Answer, answer_id)
+            if ans is None:
+                await session.rollback()
+                if retries < OPEN_GRADING_MAX_RETRIES:
+                    await _requeue_open_grading_job(data, retries + 1)
+                    logger.warning(
+                        "Answer %s not found in DB, requeued open-grading job (attempt %s/%s)",
+                        answer_id,
+                        retries + 1,
+                        OPEN_GRADING_MAX_RETRIES,
+                    )
+                else:
+                    logger.error(
+                        "Answer %s not found in DB after %s retries, dropping open-grading job",
+                        answer_id,
+                        retries,
+                    )
+                return
+
+            if ans.attempt_id is not None:
+                attempt = await test_attempt_repo.get_attempt(session, int(ans.attempt_id))
+                if attempt is not None:
+                    await test_attempt_repo.refresh_attempt_scores(session, attempt)
+
+            await session.commit()
+            logger.info("Open answer %s is pending manual grading", answer_id)
+        except Exception:
+            await session.rollback()
+            logger.exception("Failed to process open grading job for answer_id=%s", answer_id)
+            return
+
+    try:
+        await bump_cache_namespace(NS_LEADERBOARD, NS_TEST_SUMMARY)
+    except Exception:
+        logger.exception("Failed to invalidate caches after open grading postprocess for answer_id=%s", answer_id)
 
 
 async def process_answer_postprocess(job_payload: str) -> None:

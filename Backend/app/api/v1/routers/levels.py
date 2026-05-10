@@ -6,6 +6,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.repositories import level_repo
 from app.schemas.level import LevelRead
+from app.services import level_admin_service
 
 router = APIRouter()
 
@@ -15,7 +16,7 @@ async def list_levels(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    return await level_repo.list_levels(db)
+    return await level_admin_service.list_levels(db)
 
 
 @router.get("/by-points", response_model=LevelRead, status_code=200)

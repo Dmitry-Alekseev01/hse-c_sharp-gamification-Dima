@@ -266,7 +266,7 @@ async def test_ai_apply_to_material_and_idempotent(client, db):
     assert len(material_after_second_apply.json()["blocks"]) == 1
 
 
-async def test_ai_apply_question_replace_and_bound_target_validation(client, db):
+async def test_ai_apply_question_replace_and_cross_target_apply(client, db):
     teacher = await seed_user(db, username="ai_question_teacher@example.com", password="teacher123", role="teacher")
     token = await login(client, teacher.username, "teacher123")
 
@@ -302,15 +302,25 @@ async def test_ai_apply_question_replace_and_bound_target_validation(client, db)
     material_id = material.id
     await db.commit()
 
-    bound_target_error = await client.post(
+    cross_target_apply = await client.post(
         f"/api/v1/ai/gamify/{job_id}/apply",
         headers=auth_headers(token),
         json={"target_type": "material", "target_id": material_id, "apply_mode": "append"},
     )
-    assert bound_target_error.status_code == 400, bound_target_error.text
+    assert cross_target_apply.status_code == 200, cross_target_apply.text
+    assert cross_target_apply.json()["updated_entity"]["type"] == "material"
+    assert cross_target_apply.json()["updated_entity"]["id"] == material_id
+
+    replacement_job = await seed_completed_ai_job(
+        db,
+        created_by_user_id=teacher.id,
+        source_type="question",
+        source_id=question_id,
+    )
+    await db.commit()
 
     apply_response = await client.post(
-        f"/api/v1/ai/gamify/{job_id}/apply",
+        f"/api/v1/ai/gamify/{replacement_job.id}/apply",
         headers=auth_headers(token),
         json={"apply_mode": "replace"},
     )
@@ -323,7 +333,7 @@ async def test_ai_apply_question_replace_and_bound_target_validation(client, db)
     assert "public delegate void ButtonClickedHandler" in question_after_apply.json()["text"]
 
 
-async def test_ai_apply_raw_text_requires_explicit_target(client, db):
+async def test_ai_apply_raw_text_autocreates_material_target(client, db):
     teacher = await seed_user(db, username="ai_raw_target_teacher@example.com", password="teacher123", role="teacher")
     token = await login(client, teacher.username, "teacher123")
 
@@ -333,9 +343,53 @@ async def test_ai_apply_raw_text_requires_explicit_target(client, db):
     response = await client.post(
         f"/api/v1/ai/gamify/{job.id}/apply",
         headers=auth_headers(token),
-        json={"apply_mode": "append"},
+        json={"target_type": "material", "apply_mode": "append"},
     )
-    assert response.status_code == 422, response.text
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["updated_entity"]["type"] == "material"
+    assert int(payload["updated_entity"]["id"]) > 0
+
+
+async def test_ai_apply_question_autocreates_question_target(client, db):
+    teacher = await seed_user(db, username="ai_question_auto_target@example.com", password="teacher123", role="teacher")
+    token = await login(client, teacher.username, "teacher123")
+
+    test = Test(title="Auto question target test", author_id=teacher.id, published=True)
+    db.add(test)
+    await db.flush()
+
+    source_question = Question(
+        test_id=test.id,
+        text="Describe delegates in C# and include example code.",
+        points=2.0,
+        is_open_answer=True,
+    )
+    db.add(source_question)
+    await db.flush()
+
+    job = await seed_completed_ai_job(
+        db,
+        created_by_user_id=teacher.id,
+        source_type="question",
+        source_id=source_question.id,
+    )
+    await db.commit()
+
+    response = await client.post(
+        f"/api/v1/ai/gamify/{job.id}/apply",
+        headers=auth_headers(token),
+        json={"target_type": "question", "apply_mode": "append"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["updated_entity"]["type"] == "question"
+    created_question_id = int(payload["updated_entity"]["id"])
+    assert created_question_id != source_question.id
+
+    created_question_response = await client.get(f"/api/v1/questions/{created_question_id}", headers=auth_headers(token))
+    assert created_question_response.status_code == 200, created_question_response.text
+    assert "Mission: C# Basics" in created_question_response.json()["text"]
 
 
 async def test_ai_apply_requires_completed_status(client, db):

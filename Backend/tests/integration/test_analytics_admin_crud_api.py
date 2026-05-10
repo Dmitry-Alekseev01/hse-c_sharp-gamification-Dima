@@ -464,7 +464,7 @@ async def test_level_admin_crud_invalidates_level_related_caches(client, db, mon
     async def _fake_bump_cache_namespace(*namespaces: str):
         captured_calls.append(tuple(namespaces))
 
-    monkeypatch.setattr("app.api.v1.routers.analytics.bump_cache_namespace", _fake_bump_cache_namespace)
+    monkeypatch.setattr("app.services.level_admin_service.bump_cache_namespace", _fake_bump_cache_namespace)
 
     admin = await seed_user(
         db,

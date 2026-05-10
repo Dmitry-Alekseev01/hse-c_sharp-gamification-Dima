@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.security import require_roles
+from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.repositories import group_repo
 from app.schemas.group import GroupCreate, GroupRead, GroupDetailRead, GroupUpdate
@@ -47,6 +47,15 @@ async def list_groups(
         if current_user.role == "admin"
         else await group_repo.list_groups_for_teacher(db, current_user.id)
     )
+    return [_serialize_group(group) for group in groups]
+
+
+@router.get("/my", response_model=list[GroupDetailRead], status_code=status.HTTP_200_OK)
+async def list_my_groups(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    groups = await group_repo.list_groups_for_user(db, current_user.id)
     return [_serialize_group(group) for group in groups]
 
 

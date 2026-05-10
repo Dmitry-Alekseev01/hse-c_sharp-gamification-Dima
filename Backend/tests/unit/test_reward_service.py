@@ -101,3 +101,22 @@ async def test_sync_user_rewards_grants_challenge_reward_from_claim(db):
     challenge_unlock = next(item for item in unlocks if item["reward_code"] == "reward_challenge_finisher")
     assert challenge_unlock["is_eligible"] is True
     assert challenge_unlock["is_unlocked"] is True
+
+
+@pytest.mark.asyncio
+async def test_reward_read_paths_do_not_trigger_sync_side_effects(db, monkeypatch):
+    user = User(username="reward_read_only_user@example.com", password_hash="x", role="user")
+    db.add(user)
+    await db.flush()
+
+    async def _fail_if_sync_called(session, user_id: int):
+        del session, user_id
+        raise AssertionError("sync_user_rewards must not be called from read-path")
+
+    monkeypatch.setattr(reward_service, "sync_user_rewards", _fail_if_sync_called)
+
+    rewards = await reward_service.list_user_rewards(db, user.id)
+    unlocks = await reward_service.list_user_unlocks(db, user.id)
+
+    assert isinstance(rewards, list)
+    assert isinstance(unlocks, list)
