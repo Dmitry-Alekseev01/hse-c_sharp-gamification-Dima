@@ -36,19 +36,16 @@ const Home = () => {
         return;
       }
       try {
-        // Загружаем профиль, дашборд и уровни параллельно
         const [profile, dashboard, levelsData] = await Promise.all([
           fetchUserProfile(),
           fetchLearningDashboard(200),
           fetchLevels(),
         ]);
 
-        // Имя пользователя: приоритет – full_name из профиля, затем username, затем из дашборда
         const displayName =
           profile?.full_name || profile?.username || dashboard?.username || 'Гость';
         setUserName(displayName);
 
-        // Суммируем баллы за последние попытки – используем поле score_value (бэкенд)
         const totalPoints = (dashboard.test_results || []).reduce(
           (sum, test) => sum + (test.score_value || 0),
           0
@@ -135,7 +132,7 @@ const Home = () => {
       <div className="streak-section">
         <h2 className="section-title">Текущий стрик: {stats.streakDays} дней</h2>
         <div className="streak-calendar">
-          <div className="streak-placeholder">Продолжайте учиться каждый день! 🔥</div>
+          <div className="streak-placeholder">Продолжайте в том же духе</div>
         </div>
         <p className="streak-motivation">
           {stats.streakDays >= 7
@@ -174,16 +171,18 @@ const Home = () => {
             ) : (
               <div className="roadmap-timeline">
                 {levels.map((level, idx) => {
-                  const isCompleted =
-                    currentLevel && level.required_points <= currentLevel.required_points;
+                  const currentPoints = currentLevel ? currentLevel.required_points : 0;
+                  const isCompleted = currentLevel && currentPoints > level.required_points;
                   const isCurrent = currentLevel && level.id === currentLevel.id;
+                  const markerIcon = '○';
+
                   return (
                     <div
                       key={level.id}
                       className={`roadmap-item ${isCompleted ? 'completed' : isCurrent ? 'in_progress' : 'pending'}`}
                     >
                       <div className="roadmap-marker">
-                        {idx < levels.length - 1 && <div className="timeline-line"></div>}
+                        <div className="marker-icon">{markerIcon}</div>
                       </div>
                       <div className="roadmap-content">
                         <div className="roadmap-header">

@@ -42,7 +42,6 @@ const Navbar = () => {
       <div className="nav-container">
         <NavLink to="/" className="nav-brand">
           <img src="/logo-c-sharp.png" alt="C#-мастер" className="nav-logo" />
-          {/* <span>C#-мастер</span> */}
         </NavLink>
 
         <button className="mobile-menu-btn" onClick={() => setIsMenuOpen(!isMenuOpen)}>

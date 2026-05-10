@@ -93,9 +93,9 @@
   gap: 5px;
 }
 
-.meta-label {
-  font-size: 0.95rem;
-  color: #666;
+.meta-inf {
+  font-size: 1.3rem;
+  color: #000000 !important;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -211,7 +211,7 @@
 .submit-btn-sidebar {
   width: 100%;
   margin-top: 20px;
-  background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+  background: linear-gradient(135deg,#389e0d 100%);
   color: white;
   border: none;
   padding: 12px 20px;
@@ -281,7 +281,7 @@
 }
 
 .question-points {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #764ba2 100%);
   color: white;
   padding: 6px 15px;
   border-radius: 20px;

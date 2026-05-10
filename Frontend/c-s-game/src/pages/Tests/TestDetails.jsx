@@ -167,21 +167,21 @@ const TestDetails = () => {
         <div className="test-meta-info">
           {testData.test.deadline && (
             <div className="meta-item">
-              <span className="meta-label">Дедлайн:</span>
+              <span className="meta-inf">Дедлайн:</span>
               <span className="meta-value">{formatDate(testData.test.deadline)}</span>
             </div>
           )}
           <div className="meta-item">
-            <span className="meta-label">Макс. баллы:</span>
+            <span className="meta-inf">Макс. баллы:</span>
             <span className="meta-value">{testData.test.max_score}</span>
           </div>
           <div className="meta-item">
-            <span className="meta-label">Вопросов:</span>
+            <span className="meta-inf">Вопросов:</span>
             <span className="meta-value">{totalQuestions}</span>
           </div>
           {testData.test.time_limit_minutes && (
             <div className="meta-item">
-              <span className="meta-label">Лимит времени:</span>
+              <span className="meta-inf">Лимит времени:</span>
               <span className="meta-value">{testData.test.time_limit_minutes} минут</span>
             </div>
           )}

@@ -56,7 +56,7 @@ const Materials = () => {
                     <h4>Связанные тесты:</h4>
                     <div className="tests-list">
                       {material.tests.map((test) => (
-                        <Link key={test.id} to={`/tests/${test.id}`} className="test-link">
+                        <Link to={`/test/${test.id}`} className="test-link">
                           {test.title}
                         </Link>
                       ))}
