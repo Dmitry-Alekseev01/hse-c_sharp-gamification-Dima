@@ -47,7 +47,7 @@ export const loginUser = async (username, password) => {
   localStorage.setItem('userEmail', username);
   try {
     await fetchUserProfile();
-  } catch (_) {}
+  } catch {}
   return data;
 };
 
@@ -181,4 +181,12 @@ export const fetchTestAttempts = async (testId) => {
 
 export const fetchTestAttemptsQuota = async (testId) => {
   return authFetch(`/tests/${testId}/attempts/quota`);
+};
+
+export const fetchMyGroups = async () => {
+  try {
+    return await authFetch('/groups/my');
+  } catch {
+    return [];
+  }
 };
