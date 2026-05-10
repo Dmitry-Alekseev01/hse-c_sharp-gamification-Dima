@@ -65,7 +65,7 @@ const PersonalAccount = () => {
               <div className="detail-item">
                 <div className="detail-label">Логин:</div>
                 <div className="detail-value">
-                  <span className="login-value">@{profile.username}</span>
+                  <span className="login-value">{profile.username}</span>
                 </div>
               </div>
               <div className="detail-item">

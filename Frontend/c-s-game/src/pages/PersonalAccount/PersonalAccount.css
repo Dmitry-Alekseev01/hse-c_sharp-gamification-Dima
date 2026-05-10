@@ -47,7 +47,6 @@
   border-radius: 16px;
   padding: 30px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-  border: 1px solid #eaeaea;
 }
 
 .user-avatar-section {
@@ -56,21 +55,19 @@
   gap: 20px;
   margin-bottom: 30px;
   padding: 0 15px 25px 15px;
-  /* border-bottom: 2px solid #f0f0f0; */
 }
 
 .user-avatar-large {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #764ba2 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 32px;
   font-weight: 700;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
 .user-name-display h2 {
@@ -94,7 +91,7 @@
 .user-details {
   display: flex;
   flex-direction: column;
-  gap: 25px;
+  gap: 12px;
   margin-bottom: 30px;
   padding: 0 15px;
 }
@@ -104,84 +101,46 @@
   grid-template-columns: 180px 1fr;
   align-items: center;
   gap: 20px;
-  padding: 15px 20px;
+  padding: 14px 20px;
   background: #f8f9ff;
-  border-radius: 10px;
-  border: 1px solid #e0e7ff;
+  border: none;
+   border-radius: 6px; 
+}
+
+.detail-item:last-child {
+  border-bottom: none;
 }
 
 .detail-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   font-weight: 600;
-  color: #333;
-  font-size: 1rem;
+  color: #555;
+  font-size: 0.95rem;
   padding: 0 10px;
-}
-
-.detail-icon {
-  font-size: 1.2rem;
 }
 
 .detail-value {
   font-size: 1.1rem;
-  color: #444;
+  color: #222;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 10px;
 }
 
 .login-value {
-  background: #e8f4ff;
-  padding: 8px 16px;
-  border-radius: 8px;
-  color: #0066cc;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: #222;
+  font-family: inherit;
   font-weight: 500;
-  font-family: 'Courier New', monospace;
-  margin: 0 5px;
-}
-
-.password-field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 5px;
-}
-
-.password-value {
-  font-family: 'Courier New', monospace;
-  letter-spacing: 1px;
-  padding: 8px 0;
-  margin: 0 5px;
-}
-
-.password-toggle {
-  background: #667eea;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin: 0 5px;
-}
-
-.password-toggle:hover {
-  background: #764ba2;
-  transform: translateY(-1px);
 }
 
 .date-value {
-  background: #f0f0f0;
-  padding: 8px 16px;
-  border-radius: 8px;
-  color: #555;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: #222;
   font-weight: 500;
-  margin: 0 5px;
 }
 
 .account-stats {
@@ -336,16 +295,6 @@
   padding: 0 5px;
 }
 
-.analytics-arrow {
-  font-size: 1.5rem;
-  transition: transform 0.3s ease;
-  padding: 0 5px;
-}
-
-.analytics-preview-card:hover .analytics-arrow {
-  transform: translateX(5px);
-}
-
 .analytics-preview-text {
   font-size: 1.1rem;
   opacity: 0.9;
@@ -422,7 +371,7 @@
   .detail-item {
     grid-template-columns: 1fr;
     gap: 10px;
-    padding: 15px;
+    padding: 14px 15px;
   }
 
   .account-stats {
@@ -472,17 +421,6 @@
   .detail-value {
     font-size: 1rem;
     padding: 0 5px;
-  }
-
-  .password-field {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 0;
-  }
-
-  .password-toggle {
-    align-self: flex-start;
   }
 
   .analytics-preview-card {

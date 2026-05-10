@@ -103,7 +103,6 @@
   padding: 8px;
 }
 
-/* Адаптивность */
 @media (max-width: 768px) {
   .Navbar {
     padding: 10px 16px;
@@ -147,8 +146,6 @@
     font-size: 18px;
   }
 }
-
-/* Добавьте в Navbar.css */
 
 .nav-user {
   position: relative;

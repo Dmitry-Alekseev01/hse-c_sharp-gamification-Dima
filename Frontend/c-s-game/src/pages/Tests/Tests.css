@@ -123,7 +123,7 @@
 .test-title {
   font-size: 1.8rem;
   font-weight: 700;
-  color: #d8d1d1;
+  color: #ffffff;
   margin: 0;
   flex: 1;
 }
@@ -170,13 +170,13 @@
 
 .meta-label {
   font-weight: 600;
-  color: rgb(227, 219, 219) !important;
+  color: rgb(255, 255, 255) !important;
   font-size: 0.9rem;
   min-width: 90px;
 }
 
 .meta-value {
-  color: #333;
+  color: #000000;
   font-weight: 500;
 }
 

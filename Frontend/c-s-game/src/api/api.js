@@ -2,7 +2,6 @@ const API_BASE_URL = '/api/v1';
 
 export const setToken = (token) => {
   localStorage.setItem('access_token', token);
-  localStorage.setItem('isAuthenticated', 'true');
 };
 
 export const getToken = () => localStorage.getItem('access_token');

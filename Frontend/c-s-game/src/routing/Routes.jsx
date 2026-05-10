@@ -35,9 +35,8 @@ import {
   EDIT_PROFILE_ROUTE,
 } from './const.js';
 
-const isAuthenticated = () =>
-  localStorage.getItem('isAuthenticated') === 'true' ||
-  Boolean(localStorage.getItem('access_token'));
+// Единственная проверка — токен в localStorage
+const isAuthenticated = () => Boolean(localStorage.getItem('access_token'));
 
 const ProtectedRoute = ({ children }) => {
   if (!isAuthenticated()) {
@@ -100,7 +99,7 @@ const AppRoutes = () => {
       />
       <Route path={NO_PAGE_ROUTE} element={<NoPage />} />
 
-      {/* Защищенные маршруты (только для авторизованных) */}
+      {/* Защищенные маршруты */}
       <Route
         path={MAIN_ROUTE}
         element={
@@ -157,8 +156,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-
-      {/* Страница смены пароля */}
       <Route
         path={CHANGE_PASSWORD_ROUTE}
         element={
@@ -167,8 +164,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-
-      {/* Страница редактирования профиля */}
       <Route
         path={EDIT_PROFILE_ROUTE}
         element={
@@ -184,7 +179,7 @@ const AppRoutes = () => {
         element={<Navigate to={isAuthenticated() ? MAIN_ROUTE : LOGIN_ROUTE} replace />}
       />
 
-      {/* Перенаправление для неизвестных маршрутов */}
+      {/* Неизвестные маршруты */}
       <Route path="*" element={<Navigate to={NO_PAGE_ROUTE} replace />} />
     </Routes>
   );

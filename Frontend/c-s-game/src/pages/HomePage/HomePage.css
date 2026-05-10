@@ -162,7 +162,6 @@
   display: flex;
   gap: 10px;
   margin-bottom: 30px;
-  background: white;
   padding: 10px;
   border-radius: 12px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
@@ -191,7 +190,7 @@
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #667eea 100%);
   color: white;
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
@@ -467,7 +466,7 @@
 }
 
 .filter-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg,#764ba2 100%);
   color: white;
   border-color: #667eea;
 }
@@ -1120,10 +1119,6 @@
   }
 }
 
-/* Все существующие стили остаются без изменений, добавляем в конец файла */
-
-/* ===== НОВЫЙ ДИЗАЙН ДЛЯ БЛИЖАЙШИХ ДЕДЛАЙНОВ ===== */
-
 .deadline-stats {
   display: flex;
   justify-content: space-around;
@@ -1133,23 +1128,20 @@
 }
 
 .stat-big-card {
-  background: linear-gradient(135deg, #f8f9ff 0%, #e0e7ff 100%);
+  background: linear-gradient(135deg, #7e96e7 100%);
   border-radius: 20px;
   padding: 20px 30px;
   text-align: center;
   min-width: 120px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-  border: 1px solid #d0d9ff;
 }
 
 .stat-big-card.overdue {
-  background: linear-gradient(135deg, #fff1f0, #ffd9d9);
-  border-color: #ffaaa5;
+  background: linear-gradient(135deg,#e14949);
 }
 
 .stat-big-card.today {
-  background: linear-gradient(135deg, #fff8e7, #ffecb3);
-  border-color: #ffb74d;
+  background: linear-gradient(135deg,#fbd66a);
 }
 
 .stat-big-value {
@@ -1163,7 +1155,7 @@
 
 .stat-big-label {
   font-size: 0.9rem;
-  color: #666;
+  color: #000000;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -1315,4 +1307,173 @@
   }
 }
 
-/* Старые стили для вертикального списка (.deadlines-list, .deadline-card) остаются, но больше не используются */
+/* ===== Улучшенная дорожная карта ===== */
+.roadmap-section {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 32px 28px;
+  margin-bottom: 32px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+
+.roadmap-timeline {
+  position: relative;
+  padding-left: 36px;
+}
+
+/* вертикальная линия */
+.roadmap-timeline::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  background: linear-gradient(to bottom, #e2e8f0 60%, #cbd5e1 100%);
+}
+
+.roadmap-item {
+  margin-bottom: 36px;
+}
+
+.roadmap-marker {
+  position: absolute;
+  left: -36px;
+  top: 20px;
+  width: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.marker-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: white;
+  border: 3px solid #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  z-index: 2;
+}
+
+.roadmap-item.completed .marker-icon {
+  background: #10b981;
+  border-color: #059669;
+  color: white;
+}
+
+.roadmap-item.in_progress .marker-icon {
+  background: #f59e0b;
+  border-color: #d97706;
+  color: white;
+  animation: pulse-marker 2s infinite;
+}
+
+.roadmap-item.pending .marker-icon {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #64748b;
+}
+
+@keyframes pulse-marker {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+}
+
+.roadmap-content {
+  flex: 1;
+  background: #f8fafc;
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.3s ease;
+  margin-left: 16px;
+}
+
+.roadmap-content:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.roadmap-item.completed .roadmap-content {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.roadmap-item.in_progress .roadmap-content {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.roadmap-item.pending .roadmap-content {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.roadmap-header h3 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.status-badge {
+  padding: 6px 18px;
+  border-radius: 30px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-badge.completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-badge.in_progress {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge.pending {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.roadmap-description {
+  color: #475569;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.roadmap-details .detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  padding: 8px 0;
+}
+
+.roadmap-details .detail-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.roadmap-details .detail-value {
+  font-weight: 700;
+  color: #0f172a;
+  background: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+}
