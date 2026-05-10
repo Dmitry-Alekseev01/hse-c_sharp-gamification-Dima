@@ -466,7 +466,7 @@
 }
 
 .filter-btn.active {
-  background: linear-gradient(135deg,#764ba2 100%);
+  background: linear-gradient(135deg, #764ba2 100%);
   color: white;
   border-color: #667eea;
 }
@@ -1137,11 +1137,11 @@
 }
 
 .stat-big-card.overdue {
-  background: linear-gradient(135deg,#e14949);
+  background: linear-gradient(135deg, #e14949);
 }
 
 .stat-big-card.today {
-  background: linear-gradient(135deg,#fbd66a);
+  background: linear-gradient(135deg, #fbd66a);
 }
 
 .stat-big-value {
@@ -1381,8 +1381,13 @@
 }
 
 @keyframes pulse-marker {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+  }
 }
 
 .roadmap-content {

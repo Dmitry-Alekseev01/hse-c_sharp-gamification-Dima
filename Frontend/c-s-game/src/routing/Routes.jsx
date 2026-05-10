@@ -35,7 +35,6 @@ import {
   EDIT_PROFILE_ROUTE,
 } from './const.js';
 
-// Единственная проверка — токен в localStorage
 const isAuthenticated = () => Boolean(localStorage.getItem('access_token'));
 
 const ProtectedRoute = ({ children }) => {
@@ -99,7 +98,6 @@ const AppRoutes = () => {
       />
       <Route path={NO_PAGE_ROUTE} element={<NoPage />} />
 
-      {/* Защищенные маршруты */}
       <Route
         path={MAIN_ROUTE}
         element={
@@ -173,13 +171,11 @@ const AppRoutes = () => {
         }
       />
 
-      {/* Перенаправление корневого пути */}
       <Route
         path="/"
         element={<Navigate to={isAuthenticated() ? MAIN_ROUTE : LOGIN_ROUTE} replace />}
       />
 
-      {/* Неизвестные маршруты */}
       <Route path="*" element={<Navigate to={NO_PAGE_ROUTE} replace />} />
     </Routes>
   );

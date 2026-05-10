@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { LOGIN_ROUTE, REGISTER_ROUTE, MAIN_ROUTE } from '../../routing/const';
+import { useNavigate } from 'react-router-dom';
+import { MAIN_ROUTE } from '../../routing/const';
 import './Authorisation.css';
 
 const Auth = () => {

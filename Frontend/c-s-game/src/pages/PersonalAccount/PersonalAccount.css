@@ -104,7 +104,7 @@
   padding: 14px 20px;
   background: #f8f9ff;
   border: none;
-   border-radius: 6px; 
+  border-radius: 6px;
 }
 
 .detail-item:last-child {
@@ -426,4 +426,25 @@
   .analytics-preview-card {
     padding: 20px 15px;
   }
+}
+
+.groups-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.group-name {
+  background: #eef2ff;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  color: #4338ca;
+  margin-bottom: 4px;
+  display: inline-block;
+}
+
+.no-group {
+  color: #888;
+  font-style: italic;
 }

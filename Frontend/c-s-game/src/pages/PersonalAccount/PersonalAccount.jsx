@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fetchLearningDashboard, fetchUserProfile } from '../../api/api';
+import { fetchLearningDashboard, fetchUserProfile, fetchMyGroups } from '../../api/api';
 import './PersonalAccount.css';
 
 const PersonalAccount = () => {
@@ -13,6 +13,12 @@ const PersonalAccount = () => {
   const { data: dashboard, isLoading: dashboardLoading } = useQuery({
     queryKey: ['learningDashboard'],
     queryFn: () => fetchLearningDashboard(200),
+  });
+
+  const { data: groups } = useQuery({
+    queryKey: ['myGroups'],
+    queryFn: fetchMyGroups,
+    enabled: !!profile,
   });
 
   const isLoading = profileLoading || dashboardLoading;
@@ -44,9 +50,15 @@ const PersonalAccount = () => {
       : 0,
   };
 
+  const userGroups = groups || [];
+
   return (
     <div className="personal-account-page">
-      {/* ... (заголовок) ... */}
+      <div className="account-header">
+        <h1>Личный кабинет</h1>
+        <p className="account-subtitle">Управление вашей учётной записью</p>
+      </div>
+
       <div className="account-content">
         <div className="main-content-wrapper">
           <div className="user-info-card">
@@ -57,6 +69,7 @@ const PersonalAccount = () => {
                 <span className="user-status">Ученик</span>
               </div>
             </div>
+
             <div className="user-details">
               <div className="detail-item">
                 <div className="detail-label">Имя пользователя:</div>
@@ -65,7 +78,7 @@ const PersonalAccount = () => {
               <div className="detail-item">
                 <div className="detail-label">Логин:</div>
                 <div className="detail-value">
-                  <span className="login-value">{profile.username}</span>
+                  <span className="login-value">@{profile.username}</span>
                 </div>
               </div>
               <div className="detail-item">
@@ -74,7 +87,25 @@ const PersonalAccount = () => {
                   <span className="date-value">{registrationDate}</span>
                 </div>
               </div>
+
+              <div className="detail-item">
+                <div className="detail-label">Группы:</div>
+                <div className="detail-value">
+                  {userGroups.length > 0 ? (
+                    <ul className="groups-list">
+                      {userGroups.map((group) => (
+                        <li key={group.id} className="group-name">
+                          {group.name}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="no-group">Не состоит в группах</span>
+                  )}
+                </div>
+              </div>
             </div>
+
             <div className="account-actions">
               <Link to="/edit-profile" className="action-btn primary-btn">
                 Редактировать профиль
@@ -84,6 +115,7 @@ const PersonalAccount = () => {
               </Link>
             </div>
           </div>
+
           <div className="analytics-sidebar">
             <Link to="/analytics" className="analytics-link">
               <div className="analytics-preview-card">
