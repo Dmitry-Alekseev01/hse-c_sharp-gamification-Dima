@@ -34,6 +34,18 @@ async def list_all_groups(session):
     return res.scalars().all()
 
 
+async def list_groups_for_user(session, user_id: int):
+    stmt = (
+        select(StudyGroup)
+        .join(GroupMembership, GroupMembership.group_id == StudyGroup.id)
+        .options(selectinload(StudyGroup.memberships).selectinload(GroupMembership.user))
+        .where(GroupMembership.user_id == user_id)
+        .order_by(StudyGroup.name.asc())
+    )
+    res = await session.execute(stmt)
+    return res.scalars().all()
+
+
 async def get_group(session, group_id: int) -> StudyGroup | None:
     stmt = (
         select(StudyGroup)
