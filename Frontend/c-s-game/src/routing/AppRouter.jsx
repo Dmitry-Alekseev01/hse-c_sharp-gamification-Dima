@@ -7,7 +7,6 @@ import {
   LOGIN_ROUTE,
   REGISTER_ROUTE,
   AUTH_ROUTE,
-  FORGOT_PASSWORD_ROUTE,
   RESET_PASSWORD_ROUTE,
 } from './const';
 import '../App.css';
@@ -19,7 +18,6 @@ const Layout = () => {
     LOGIN_ROUTE,
     REGISTER_ROUTE,
     AUTH_ROUTE,
-    FORGOT_PASSWORD_ROUTE,
     RESET_PASSWORD_ROUTE,
   ];
 
