@@ -14,6 +14,18 @@ async def get_current_level_for_points(session, points: int):
     return res.scalars().first()
 
 
+async def get_current_level_id_for_points(session, points: float):
+    q = (
+        select(Level.id)
+        .where(Level.required_points <= points)
+        .order_by(Level.required_points.desc())
+        .limit(1)
+    )
+    res = await session.execute(q)
+    level_id = res.scalar_one_or_none()
+    return int(level_id) if level_id is not None else None
+
+
 async def get_level_by_id(session, level_id: int):
     q = select(Level).where(Level.id == level_id).limit(1)
     res = await session.execute(q)

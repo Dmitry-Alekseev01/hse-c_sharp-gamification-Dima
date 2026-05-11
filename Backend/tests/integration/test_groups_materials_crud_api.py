@@ -90,6 +90,99 @@ async def test_group_update_crud_access_matrix(client, db):
     assert admin_update_response.json()["name"] == "group-admin-updated"
 
 
+async def test_groups_my_returns_only_membership_groups(client, db):
+    owner_teacher = await seed_user(
+        db,
+        username="groups_my_owner_teacher@example.com",
+        password="teach123",
+        role="teacher",
+        full_name="Groups My Owner Teacher",
+    )
+    second_teacher = await seed_user(
+        db,
+        username="groups_my_second_teacher@example.com",
+        password="teach123",
+        role="teacher",
+        full_name="Groups My Second Teacher",
+    )
+    student = await seed_user(
+        db,
+        username="groups_my_student@example.com",
+        password="stud123",
+        role="user",
+        full_name="Groups My Student",
+    )
+    admin = await seed_user(
+        db,
+        username="groups_my_admin@example.com",
+        password="admin123",
+        role="admin",
+        full_name="Groups My Admin",
+    )
+
+    owner_token = await login(client, owner_teacher.username, "teach123")
+    second_teacher_token = await login(client, second_teacher.username, "teach123")
+    student_token = await login(client, student.username, "stud123")
+    admin_token = await login(client, admin.username, "admin123")
+
+    owner_group_response = await client.post(
+        "/api/v1/groups/",
+        headers=auth_headers(owner_token),
+        json={"name": "groups-my-owner-group"},
+    )
+    assert owner_group_response.status_code == 201, owner_group_response.text
+    owner_group_id = owner_group_response.json()["id"]
+
+    second_group_response = await client.post(
+        "/api/v1/groups/",
+        headers=auth_headers(second_teacher_token),
+        json={"name": "groups-my-second-group"},
+    )
+    assert second_group_response.status_code == 201, second_group_response.text
+    second_group_id = second_group_response.json()["id"]
+
+    add_student_to_owner_group = await client.post(
+        f"/api/v1/groups/{owner_group_id}/members/{student.id}",
+        headers=auth_headers(owner_token),
+    )
+    assert add_student_to_owner_group.status_code == 200, add_student_to_owner_group.text
+
+    add_student_to_second_group = await client.post(
+        f"/api/v1/groups/{second_group_id}/members/{student.id}",
+        headers=auth_headers(second_teacher_token),
+    )
+    assert add_student_to_second_group.status_code == 200, add_student_to_second_group.text
+
+    student_groups_response = await client.get(
+        "/api/v1/groups/my",
+        headers=auth_headers(student_token),
+    )
+    assert student_groups_response.status_code == 200, student_groups_response.text
+    student_groups_payload = student_groups_response.json()
+    assert {group["id"] for group in student_groups_payload} == {owner_group_id, second_group_id}
+    for group in student_groups_payload:
+        assert any(member["user_id"] == student.id for member in group["members"])
+
+    owner_my_groups_response = await client.get(
+        "/api/v1/groups/my",
+        headers=auth_headers(owner_token),
+    )
+    assert owner_my_groups_response.status_code == 200, owner_my_groups_response.text
+    assert owner_my_groups_response.json() == []
+
+    admin_my_groups_response = await client.get(
+        "/api/v1/groups/my",
+        headers=auth_headers(admin_token),
+    )
+    assert admin_my_groups_response.status_code == 200, admin_my_groups_response.text
+    assert admin_my_groups_response.json() == []
+
+
+async def test_groups_my_requires_authentication(client):
+    response = await client.get("/api/v1/groups/my")
+    assert response.status_code == 401, response.text
+
+
 async def test_material_blocks_and_attachments_crud_access(client, db):
     owner_teacher = await seed_user(
         db,

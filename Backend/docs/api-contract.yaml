@@ -74,6 +74,40 @@ components:
       properties:
         detail: { type: string }
 
+    GroupCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+
+    GroupUpdate:
+      type: object
+      properties:
+        name: { type: string, nullable: true }
+
+    GroupRead:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        teacher_id: { type: integer }
+
+    GroupMemberRead:
+      type: object
+      properties:
+        user_id: { type: integer }
+        username: { type: string }
+        full_name: { type: string, nullable: true }
+
+    GroupDetailRead:
+      allOf:
+        - $ref: '#/components/schemas/GroupRead'
+        - type: object
+          properties:
+            members:
+              type: array
+              items: { $ref: '#/components/schemas/GroupMemberRead' }
+
     MaterialRead:
       type: object
       properties:
@@ -1897,11 +1931,45 @@ paths:
     get:
       summary: List groups for current teacher/admin
       responses:
-        '200': { description: Group list }
+        '200':
+          description: Group list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GroupDetailRead' }
+        '403': { description: Insufficient permissions }
     post:
       summary: Create group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupCreate' }
       responses:
-        '201': { description: Group created }
+        '201':
+          description: Group created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupRead' }
+        '400': { description: Validation/uniqueness error }
+        '403': { description: Insufficient permissions }
+
+  /api/v1/groups/my:
+    get:
+      summary: List groups where current user is a member
+      description: >
+        Returns groups by membership relation. For teachers/admins this can be empty
+        when they are not explicitly added as members.
+      responses:
+        '200':
+          description: Membership-based groups for current user
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GroupDetailRead' }
+        '401': { description: Unauthorized }
 
   /api/v1/ai/gamify:
     get:
