@@ -7,25 +7,10 @@ from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.repositories import group_repo
 from app.schemas.group import GroupCreate, GroupRead, GroupDetailRead, GroupUpdate
+from app.services.group_view_service import serialize_group_detail
 
 
 router = APIRouter()
-
-
-def _serialize_group(group) -> dict:
-    return {
-        "id": group.id,
-        "name": group.name,
-        "teacher_id": group.teacher_id,
-        "members": [
-            {
-                "user_id": membership.user_id,
-                "username": membership.user.username if membership.user else "",
-                "full_name": membership.user.full_name if membership.user else None,
-            }
-            for membership in group.memberships
-        ],
-    }
 
 
 async def _get_managed_group(db: AsyncSession, group_id: int, current_user: User):
@@ -47,7 +32,7 @@ async def list_groups(
         if current_user.role == "admin"
         else await group_repo.list_groups_for_teacher(db, current_user.id)
     )
-    return [_serialize_group(group) for group in groups]
+    return [serialize_group_detail(group) for group in groups]
 
 
 @router.get("/my", response_model=list[GroupDetailRead], status_code=status.HTTP_200_OK)
@@ -56,7 +41,7 @@ async def list_my_groups(
     current_user: User = Depends(get_current_user),
 ):
     groups = await group_repo.list_groups_for_user(db, current_user.id)
-    return [_serialize_group(group) for group in groups]
+    return [serialize_group_detail(group, member_user_id=current_user.id) for group in groups]
 
 
 @router.post("/", response_model=GroupRead, status_code=status.HTTP_201_CREATED)
@@ -79,7 +64,7 @@ async def get_group(
     current_user: User = Depends(require_roles("teacher", "admin")),
 ):
     group = await _get_managed_group(db, group_id, current_user)
-    return _serialize_group(group)
+    return serialize_group_detail(group)
 
 
 @router.patch("/{group_id}", response_model=GroupRead, status_code=status.HTTP_200_OK)
@@ -127,7 +112,7 @@ async def add_group_member(
     except IntegrityError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already in this group") from exc
     refreshed = await group_repo.get_group(db, group_id)
-    return _serialize_group(refreshed)
+    return serialize_group_detail(refreshed)
 
 
 @router.delete("/{group_id}/members/{user_id}", response_model=GroupDetailRead, status_code=status.HTTP_200_OK)
@@ -142,4 +127,4 @@ async def remove_group_member(
     if not removed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
     refreshed = await group_repo.get_group(db, group_id)
-    return _serialize_group(refreshed)
+    return serialize_group_detail(refreshed)

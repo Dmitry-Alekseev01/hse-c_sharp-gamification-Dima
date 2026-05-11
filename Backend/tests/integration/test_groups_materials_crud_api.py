@@ -161,7 +161,7 @@ async def test_groups_my_returns_only_membership_groups(client, db):
     student_groups_payload = student_groups_response.json()
     assert {group["id"] for group in student_groups_payload} == {owner_group_id, second_group_id}
     for group in student_groups_payload:
-        assert any(member["user_id"] == student.id for member in group["members"])
+        assert [member["user_id"] for member in group["members"]] == [student.id]
 
     owner_my_groups_response = await client.get(
         "/api/v1/groups/my",
