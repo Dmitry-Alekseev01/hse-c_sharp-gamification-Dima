@@ -152,10 +152,10 @@ async def _collect_reward_context(session: AsyncSession, user_id: int) -> dict[s
             )
         ).scalars().all()
     )
-    analytics = (
-        await session.execute(select(Analytics).where(Analytics.user_id == user_id))
-    ).scalars().first()
-    total_points = float(analytics.total_points or 0.0) if analytics is not None else 0.0
+    total_points_raw = await session.scalar(
+        select(Analytics.total_points).where(Analytics.user_id == user_id).limit(1)
+    )
+    total_points = float(total_points_raw or 0.0)
     return {
         "achievement_codes": achievement_codes,
         "challenge_codes": challenge_codes,

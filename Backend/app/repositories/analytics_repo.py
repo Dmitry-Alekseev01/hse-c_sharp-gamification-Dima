@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import case, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from app.models.achievement_definition import AchievementDefinition
 from app.models.analytics import Analytics
@@ -67,7 +68,14 @@ DEFAULT_ACHIEVEMENT_DEFINITIONS = [
 
 
 async def get_analytics_for_user(session: AsyncSession, user_id: int) -> Optional[Analytics]:
-    q = select(Analytics).where(Analytics.user_id == user_id)
+    q = (
+        select(Analytics)
+        .options(
+            noload(Analytics.user),
+            noload(Analytics.level),
+        )
+        .where(Analytics.user_id == user_id)
+    )
     res = await session.execute(q)
     return res.scalars().first()
 
@@ -88,8 +96,10 @@ async def _sync_level_and_activity(session: AsyncSession, analytics: Analytics, 
     if mark_active:
         analytics.streak_days = _recalculate_streak(analytics.last_active, int(analytics.streak_days or 0), now)
         analytics.last_active = now
-    current_level = await level_repo.get_current_level_for_points(session, float(analytics.total_points or 0.0))
-    analytics.current_level_id = current_level.id if current_level is not None else None
+    analytics.current_level_id = await level_repo.get_current_level_id_for_points(
+        session,
+        float(analytics.total_points or 0.0),
+    )
 
 
 async def _get_or_create_analytics(session: AsyncSession, user_id: int) -> Analytics:
@@ -216,6 +226,8 @@ async def apply_points_transaction(
     source_id: int | None = None,
     idempotency_key: str | None = None,
     metadata: dict[str, Any] | None = None,
+    award_achievements: bool = True,
+    sync_rewards: bool = True,
 ) -> Analytics:
     if idempotency_key:
         existing = (
@@ -246,8 +258,10 @@ async def apply_points_transaction(
             )
         )
 
-    await _award_achievements_if_eligible(session, user_id=user_id, analytics=analytics, source_event=reason_code)
-    await reward_service.sync_user_rewards(session, user_id)
+    if award_achievements:
+        await _award_achievements_if_eligible(session, user_id=user_id, analytics=analytics, source_event=reason_code)
+    if sync_rewards:
+        await reward_service.sync_user_rewards(session, user_id)
     await session.flush()
     try:
         await bump_cache_namespace(NS_LEADERBOARD, NS_TEST_SUMMARY)
@@ -268,6 +282,8 @@ async def create_or_update_analytics(
     source_id: int | None = None,
     idempotency_key: str | None = None,
     metadata: dict[str, Any] | None = None,
+    award_achievements: bool = True,
+    sync_rewards: bool = True,
 ) -> Analytics:
     return await apply_points_transaction(
         session,
@@ -280,7 +296,31 @@ async def create_or_update_analytics(
         source_id=source_id,
         idempotency_key=idempotency_key,
         metadata=metadata,
+        award_achievements=award_achievements,
+        sync_rewards=sync_rewards,
     )
+
+
+async def sync_user_gamification_side_effects(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    source_event: str | None,
+) -> Analytics:
+    """
+    Recompute secondary gamification state (achievements/rewards) for an already
+    updated analytics row. Intended for deferred post-processing.
+    """
+    analytics = await _get_or_create_analytics(session, user_id)
+    await _award_achievements_if_eligible(
+        session,
+        user_id=user_id,
+        analytics=analytics,
+        source_event=source_event,
+    )
+    await reward_service.sync_user_rewards(session, user_id)
+    await session.flush()
+    return analytics
 
 
 async def get_user_analytics(session: AsyncSession, user_id: int) -> Optional[Analytics]:
@@ -375,7 +415,14 @@ async def apply_points_delta(
     )
 
 
-async def register_completed_attempt(session: AsyncSession, user_id: int, attempt_id: int | None = None) -> Analytics:
+async def register_completed_attempt(
+    session: AsyncSession,
+    user_id: int,
+    attempt_id: int | None = None,
+    *,
+    award_achievements: bool = True,
+    sync_rewards: bool = True,
+) -> Analytics:
     return await create_or_update_analytics(
         session,
         user_id=user_id,
@@ -386,6 +433,8 @@ async def register_completed_attempt(session: AsyncSession, user_id: int, attemp
         source_type="test_attempt",
         source_id=attempt_id,
         idempotency_key=f"attempt_completed:{attempt_id}" if attempt_id is not None else None,
+        award_achievements=award_achievements,
+        sync_rewards=sync_rewards,
     )
 
 

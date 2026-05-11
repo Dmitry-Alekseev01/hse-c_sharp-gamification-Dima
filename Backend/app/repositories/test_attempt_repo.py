@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import noload
 
 from app.models.answer import Answer
 from app.models.question import Question
@@ -16,12 +17,20 @@ async def create_attempt(session, user_id: int, test_id: int) -> TestAttempt:
 
 
 async def get_attempt(session, attempt_id: int) -> TestAttempt | None:
-    return await session.get(TestAttempt, attempt_id)
+    stmt = (
+        select(TestAttempt)
+        .options(noload("*"))
+        .where(TestAttempt.id == attempt_id)
+        .limit(1)
+    )
+    res = await session.execute(stmt)
+    return res.scalars().first()
 
 
 async def get_active_attempt(session, user_id: int, test_id: int) -> TestAttempt | None:
     stmt = (
         select(TestAttempt)
+        .options(noload("*"))
         .where(
             TestAttempt.user_id == user_id,
             TestAttempt.test_id == test_id,
@@ -37,6 +46,7 @@ async def get_active_attempt(session, user_id: int, test_id: int) -> TestAttempt
 async def get_latest_attempt_for_user_test(session, user_id: int, test_id: int) -> TestAttempt | None:
     stmt = (
         select(TestAttempt)
+        .options(noload("*"))
         .where(
             TestAttempt.user_id == user_id,
             TestAttempt.test_id == test_id,
@@ -49,7 +59,12 @@ async def get_latest_attempt_for_user_test(session, user_id: int, test_id: int) 
 
 
 async def list_attempts_for_user(session, user_id: int, test_id: int | None = None):
-    stmt = select(TestAttempt).where(TestAttempt.user_id == user_id).order_by(TestAttempt.started_at.desc(), TestAttempt.id.desc())
+    stmt = (
+        select(TestAttempt)
+        .options(noload("*"))
+        .where(TestAttempt.user_id == user_id)
+        .order_by(TestAttempt.started_at.desc(), TestAttempt.id.desc())
+    )
     if test_id is not None:
         stmt = stmt.where(TestAttempt.test_id == test_id)
     res = await session.execute(stmt)
