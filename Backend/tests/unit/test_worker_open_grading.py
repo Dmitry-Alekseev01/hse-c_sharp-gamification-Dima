@@ -91,3 +91,40 @@ async def test_process_job_refreshes_attempt_and_invalidates_cache(monkeypatch):
     assert calls["get_attempt"] == 1
     assert calls["refresh_attempt_scores"] == 1
     assert calls["cache"] == 1
+
+
+async def test_process_answer_postprocess_attempt_complete_runs_deferred_side_effects(monkeypatch):
+    fake_session = _FakeAsyncSessionCtx(answer=None)
+    calls = {"rewards_sync": 0, "events": [], "cache": 0}
+
+    async def _fake_sync_user_rewards(session, user_id: int):
+        assert session is fake_session
+        assert user_id == 17
+        calls["rewards_sync"] += 1
+
+    async def _fake_record_event(session, *, user_id, event_type, increment=1):
+        assert session is fake_session
+        assert user_id == 17
+        calls["events"].append((event_type.value, increment))
+        return []
+
+    async def _fake_bump_cache_namespace(*namespaces: str):
+        assert set(namespaces) == {"leaderboard", "test_summary"}
+        calls["cache"] += 1
+
+    monkeypatch.setattr(worker, "AsyncSessionLocal", lambda: fake_session)
+    monkeypatch.setattr(
+        worker.reward_service,
+        "sync_user_rewards",
+        _fake_sync_user_rewards,
+    )
+    monkeypatch.setattr(worker, "record_event", _fake_record_event)
+    monkeypatch.setattr(worker, "bump_cache_namespace", _fake_bump_cache_namespace)
+
+    await worker.process_answer_postprocess(json.dumps({"job_type": "attempt_complete", "user_id": 17}))
+
+    assert fake_session.commits == 1
+    assert calls["rewards_sync"] == 1
+    assert ("attempt_completed", 1) in calls["events"]
+    assert ("streak_day", 1) in calls["events"]
+    assert calls["cache"] == 1

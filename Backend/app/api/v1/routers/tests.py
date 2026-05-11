@@ -1,3 +1,4 @@
+import json
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -10,7 +11,7 @@ from app.api.v1.access import (
     get_visible_test,
     is_unlocked_test,
 )
-from app.api.deps import get_db
+from app.api.deps import add_post_commit_task, get_db
 from app.cache.redis_cache import (
     ANSWERS_BY_TEST_TTL,
     NS_MATERIALS,
@@ -35,6 +36,7 @@ from app.cache.redis_cache import (
     get_cache_namespace_version,
     get_user_attempts_state_version,
     get,
+    get_redis_client,
     set,
 )
 from app.core.security import get_current_user, require_roles
@@ -51,10 +53,34 @@ from app.repositories import analytics_repo, answer_repo, test_repo, test_attemp
 from app.repositories import question_repo
 from app.services import test_service
 from app.services.answer_service import submit_answers_batch_for_attempt
-from app.services.challenge_service import ChallengeEventType, record_event
 from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user, utcnow
 
 router = APIRouter()
+
+
+def _schedule_attempt_completion_postprocess(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    test_id: int,
+    attempt_id: int,
+) -> None:
+    async def enqueue_after_commit() -> None:
+        try:
+            redis = get_redis_client()
+            payload = {
+                "job_type": "attempt_complete",
+                "user_id": int(user_id),
+                "test_id": int(test_id),
+                "attempt_id": int(attempt_id),
+                "source_event": "attempt_completed",
+            }
+            await redis.rpush("answers:postprocess", json.dumps(payload))
+        except Exception:
+            # Queue failures must not break successful submit responses.
+            pass
+
+    add_post_commit_task(db, enqueue_after_commit)
 
 
 def _resolve_block_reason_from_policy_error(exc: AttemptPolicyError) -> AttemptBlockReason | None:
@@ -658,18 +684,17 @@ async def submit_test_attempt(
 
     completed_attempt = await test_attempt_repo.complete_attempt(db, attempt)
     await bump_user_attempts_state_version(completed_attempt.user_id)
-    await analytics_repo.register_completed_attempt(db, completed_attempt.user_id, attempt_id=completed_attempt.id)
-    await record_event(
+    await analytics_repo.register_completed_attempt(
         db,
-        user_id=completed_attempt.user_id,
-        event_type=ChallengeEventType.ATTEMPT_COMPLETED,
-        increment=1,
+        completed_attempt.user_id,
+        attempt_id=completed_attempt.id,
+        sync_rewards=False,
     )
-    await record_event(
+    _schedule_attempt_completion_postprocess(
         db,
         user_id=completed_attempt.user_id,
-        event_type=ChallengeEventType.STREAK_DAY,
-        increment=1,
+        test_id=completed_attempt.test_id,
+        attempt_id=completed_attempt.id,
     )
     return completed_attempt
 
@@ -697,18 +722,17 @@ async def complete_test_attempt(
         return attempt
     completed_attempt = await test_attempt_repo.complete_attempt(db, attempt)
     await bump_user_attempts_state_version(completed_attempt.user_id)
-    await analytics_repo.register_completed_attempt(db, completed_attempt.user_id, attempt_id=completed_attempt.id)
-    await record_event(
+    await analytics_repo.register_completed_attempt(
         db,
-        user_id=completed_attempt.user_id,
-        event_type=ChallengeEventType.ATTEMPT_COMPLETED,
-        increment=1,
+        completed_attempt.user_id,
+        attempt_id=completed_attempt.id,
+        sync_rewards=False,
     )
-    await record_event(
+    _schedule_attempt_completion_postprocess(
         db,
         user_id=completed_attempt.user_id,
-        event_type=ChallengeEventType.STREAK_DAY,
-        increment=1,
+        test_id=completed_attempt.test_id,
+        attempt_id=completed_attempt.id,
     )
     return completed_attempt
 

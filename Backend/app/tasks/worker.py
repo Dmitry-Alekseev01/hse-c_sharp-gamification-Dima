@@ -13,6 +13,8 @@ from app.db.session import AsyncSessionLocal
 from app.models.answer import Answer
 from app.repositories import analytics_repo, test_attempt_repo
 from app.services.ai_gamification_service import AI_GAMIFY_QUEUE, process_ai_gamification_job
+from app.services.challenge_service import ChallengeEventType, record_event
+from app.services import reward_service
 
 logger = logging.getLogger("worker")
 OPEN_GRADING_MAX_RETRIES = 5
@@ -104,29 +106,49 @@ async def process_answer_postprocess(job_payload: str) -> None:
         logger.exception("Invalid analytics job payload: %s", job_payload)
         return
 
+    job_type = str(data.get("job_type") or "answer")
     user_id = data.get("user_id")
     test_id = data.get("test_id")
     attempt_id = data.get("attempt_id")
     points_delta = float(data.get("points_delta") or 0.0)
     mark_active = bool(data.get("mark_active"))
 
-    if user_id is None or test_id is None:
-        logger.warning("Analytics job missing identifiers: %s", data)
+    if user_id is None:
+        logger.warning("Analytics job missing user_id: %s", data)
         return
 
     async with AsyncSessionLocal() as session:
         try:
-            if points_delta != 0 or mark_active:
-                await analytics_repo.create_or_update_analytics(
+            if job_type == "attempt_complete":
+                await reward_service.sync_user_rewards(session, int(user_id))
+                await record_event(
                     session,
-                    user_id=user_id,
-                    points_delta=points_delta,
-                    mark_active=mark_active,
+                    user_id=int(user_id),
+                    event_type=ChallengeEventType.ATTEMPT_COMPLETED,
+                    increment=1,
                 )
-            if attempt_id is not None:
-                attempt = await test_attempt_repo.get_attempt(session, int(attempt_id))
-                if attempt is not None:
-                    await test_attempt_repo.refresh_attempt_scores(session, attempt)
+                await record_event(
+                    session,
+                    user_id=int(user_id),
+                    event_type=ChallengeEventType.STREAK_DAY,
+                    increment=1,
+                )
+            else:
+                if test_id is None:
+                    logger.warning("Analytics answer job missing test_id: %s", data)
+                    await session.rollback()
+                    return
+                if points_delta != 0 or mark_active:
+                    await analytics_repo.create_or_update_analytics(
+                        session,
+                        user_id=user_id,
+                        points_delta=points_delta,
+                        mark_active=mark_active,
+                    )
+                if attempt_id is not None:
+                    attempt = await test_attempt_repo.get_attempt(session, int(attempt_id))
+                    if attempt is not None:
+                        await test_attempt_repo.refresh_attempt_scores(session, attempt)
             await session.commit()
         except Exception:
             await session.rollback()

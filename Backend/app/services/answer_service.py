@@ -12,6 +12,7 @@ import json
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.orm import noload
 
 from app.api.deps import add_post_commit_task
 from app.repositories import answer_repo, analytics_repo, test_attempt_repo
@@ -187,12 +188,25 @@ async def submit_answers_batch_for_attempt(
 
     question_rows = (
         await session.execute(
-            select(Question).where(Question.id.in_(unique_question_ids))
+            select(
+                Question.id,
+                Question.test_id,
+                Question.points,
+                Question.is_open_answer,
+            ).where(Question.id.in_(unique_question_ids))
         )
-    ).scalars().all()
-    question_map = {int(question.id): question for question in question_rows}
+    ).all()
+    question_map = {
+        int(question_id): {
+            "id": int(question_id),
+            "test_id": int(test_id),
+            "points": float(points or 0.0),
+            "is_open_answer": bool(is_open_answer),
+        }
+        for question_id, test_id, points, is_open_answer in question_rows
+    }
 
-    normalized_items: list[tuple[Question, str, str, int | None]] = []
+    normalized_items: list[tuple[int, bool, float, str, str, int | None]] = []
     choice_ids: set[int] = set()
 
     for question_id, payload in answers:
@@ -200,34 +214,51 @@ async def submit_answers_batch_for_attempt(
         question = question_map.get(normalized_question_id)
         if question is None:
             raise LookupError("Question not found")
-        if int(question.test_id) != int(test_id):
+        if int(question["test_id"]) != int(test_id):
             raise ValueError("Question does not belong to the specified test")
 
         normalized_payload = "" if payload is None else str(payload)
         trimmed_payload = normalized_payload.strip()
 
         parsed_choice_id: int | None = None
-        if not bool(question.is_open_answer) and trimmed_payload.lower() not in {"", "null", "none"}:
+        if not question["is_open_answer"] and trimmed_payload.lower() not in {"", "null", "none"}:
             try:
                 parsed_choice_id = int(trimmed_payload)
             except (TypeError, ValueError):
                 raise ValueError("Closed question answer must be a valid choice id")
             choice_ids.add(parsed_choice_id)
 
-        normalized_items.append((question, normalized_payload, trimmed_payload, parsed_choice_id))
+        normalized_items.append(
+            (
+                normalized_question_id,
+                bool(question["is_open_answer"]),
+                float(question["points"]),
+                normalized_payload,
+                trimmed_payload,
+                parsed_choice_id,
+            )
+        )
 
-    choice_map: dict[int, Choice] = {}
+    choice_map: dict[int, dict[str, int | bool]] = {}
     if choice_ids:
         choice_rows = (
             await session.execute(
-                select(Choice).where(Choice.id.in_(choice_ids))
+                select(Choice.id, Choice.question_id, Choice.is_correct).where(Choice.id.in_(choice_ids))
             )
-        ).scalars().all()
-        choice_map = {int(choice.id): choice for choice in choice_rows}
+        ).all()
+        choice_map = {
+            int(choice_id): {
+                "question_id": int(question_id),
+                "is_correct": bool(is_correct),
+            }
+            for choice_id, question_id, is_correct in choice_rows
+        }
 
     existing_rows = (
         await session.execute(
-            select(Answer).where(
+            select(Answer)
+            .options(noload("*"))
+            .where(
                 Answer.user_id == user_id,
                 Answer.test_id == test_id,
                 Answer.attempt_id == attempt_id,
@@ -243,9 +274,15 @@ async def submit_answers_batch_for_attempt(
     total_points_delta = 0.0
     submitted_answers_count = 0
 
-    for question, normalized_payload, trimmed_payload, parsed_choice_id in normalized_items:
+    for (
+        question_id,
+        is_open,
+        question_points,
+        normalized_payload,
+        trimmed_payload,
+        parsed_choice_id,
+    ) in normalized_items:
         submitted_answers_count += 1
-        is_open = bool(question.is_open_answer)
         score: float | None = None
 
         if not is_open:
@@ -256,16 +293,16 @@ async def submit_answers_batch_for_attempt(
                 if parsed_choice_id is None:
                     raise ValueError("Closed question answer must be a valid choice id")
                 choice = choice_map.get(parsed_choice_id)
-                if choice is None or int(choice.question_id) != int(question.id):
+                if choice is None or int(choice["question_id"]) != question_id:
                     raise ValueError("Selected choice does not belong to the specified question")
-                score = float(question.points) if bool(choice.is_correct) else 0.0
+                score = question_points if bool(choice["is_correct"]) else 0.0
         else:
             if trimmed_payload == "":
                 score = 0.0
             else:
                 score = None
 
-        existing_answer = answers_by_question_id.get(int(question.id))
+        existing_answer = answers_by_question_id.get(question_id)
         previous_score = float(existing_answer.score or 0.0) if existing_answer is not None else 0.0
 
         if existing_answer is None:
@@ -273,11 +310,11 @@ async def submit_answers_batch_for_attempt(
                 user_id=user_id,
                 test_id=test_id,
                 attempt_id=attempt_id,
-                question_id=question.id,
+                question_id=question_id,
                 answer_payload=normalized_payload,
             )
             session.add(existing_answer)
-            answers_by_question_id[int(question.id)] = existing_answer
+            answers_by_question_id[question_id] = existing_answer
         else:
             existing_answer.answer_payload = normalized_payload
 
@@ -305,6 +342,8 @@ async def submit_answers_batch_for_attempt(
             "attempt_id": attempt_id,
             "answers_count": submitted_answers_count,
         },
+        award_achievements=False,
+        sync_rewards=False,
     )
 
     await record_event(
