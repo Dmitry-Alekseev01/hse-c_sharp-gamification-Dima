@@ -18,7 +18,11 @@ const Login = () => {
 
   const validate = () => {
     const newErrors = {};
-    if (!formData.username) newErrors.username = 'Введите имя пользователя';
+    if (!formData.username.trim()) {
+      newErrors.username = 'Введите email';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.username)) {
+      newErrors.username = 'Введите корректный email';
+    }
     if (!formData.password) newErrors.password = 'Введите пароль';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -81,9 +85,6 @@ const Login = () => {
               />
               <label>Запомнить меня</label>
             </div>
-            <Link to={FORGOT_PASSWORD_ROUTE} className="forgot-link">
-              Забыли пароль?
-            </Link>
           </div>
           {errors.submit && <div className="submit-error">{errors.submit}</div>}
           <button type="submit" className="auth-button" disabled={isLoading}>

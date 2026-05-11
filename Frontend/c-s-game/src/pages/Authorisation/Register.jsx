@@ -24,8 +24,11 @@ const Register = () => {
 
   const validate = () => {
     const newErrors = {};
-    if (!formData.username.trim()) newErrors.username = 'Введите имя пользователя';
-    else if (formData.username.length < 3) newErrors.username = 'Минимум 3 символа';
+    if (!formData.username.trim()) {
+      newErrors.username = 'Введите email';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.username)) {
+      newErrors.username = 'Введите корректный email';
+    }
     if (!formData.fullName.trim()) newErrors.fullName = 'Введите имя';
     if (!formData.password) newErrors.password = 'Введите пароль';
     else if (formData.password.length < 6)

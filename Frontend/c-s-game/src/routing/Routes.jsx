@@ -12,7 +12,6 @@ import TestDetails from '../pages/Tests/TestDetails';
 import Auth from '../pages/Authorisation/Authorisation';
 import Login from '../pages/Authorisation/Login';
 import Register from '../pages/Authorisation/Register';
-import ForgotPassword from '../pages/Authorisation/ForgotPassword';
 import ResetPassword from '../pages/Authorisation/ResetPassword';
 import ChangePassword from '../components/ChangePassword/ChangePassword';
 import EditProfile from '../components/EditProfile/EditProfile';
@@ -29,7 +28,6 @@ import {
   AUTH_ROUTE,
   LOGIN_ROUTE,
   REGISTER_ROUTE,
-  FORGOT_PASSWORD_ROUTE,
   RESET_PASSWORD_ROUTE,
   CHANGE_PASSWORD_ROUTE,
   EDIT_PROFILE_ROUTE,
@@ -77,14 +75,6 @@ const AppRoutes = () => {
         element={
           <PublicRoute>
             <Auth />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path={FORGOT_PASSWORD_ROUTE}
-        element={
-          <PublicRoute>
-            <ForgotPassword />
           </PublicRoute>
         }
       />

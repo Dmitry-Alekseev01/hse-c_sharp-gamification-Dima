@@ -159,9 +159,6 @@ const MaterialDetails = () => {
                   {material.content_url ? 'Доступна' : 'Не доступна'}
                 </span>
               </div>
-              <button className="action-btn save-btn save-btn-sidebar">
-                Сохранить для изучения
-              </button>
             </div>
           </div>
 
