@@ -222,7 +222,7 @@ async def test_submit_attempt_batches_answers_and_completes_attempt(client, db):
 
 
 async def test_submit_attempt_enqueues_attempt_complete_postprocess_job(client, db, monkeypatch):
-    from app.api.v1.routers import tests as tests_router
+    from app.services import test_attempt_api_service
 
     teacher = await seed_user(db, username="answers_queue_teacher@example.com", password="teach123", role="teacher")
     student = await seed_user(db, username="answers_queue_student@example.com", password="stud123", role="user")
@@ -240,7 +240,7 @@ async def test_submit_attempt_enqueues_attempt_complete_postprocess_job(client, 
     attempt = await _start_attempt(client, student_token, created_test["id"])
 
     fake_redis = _FakeRedis()
-    monkeypatch.setattr(tests_router, "get_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(test_attempt_api_service, "get_redis_client", lambda: fake_redis)
 
     submit_response = await client.post(
         f"/api/v1/tests/attempts/{attempt['id']}/submit",

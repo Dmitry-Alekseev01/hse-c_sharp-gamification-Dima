@@ -1,4 +1,3 @@
-import json
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -11,7 +10,7 @@ from app.api.v1.access import (
     get_visible_test,
     is_unlocked_test,
 )
-from app.api.deps import add_post_commit_task, get_db
+from app.api.deps import get_db
 from app.cache.redis_cache import (
     ANSWERS_BY_TEST_TTL,
     NS_MATERIALS,
@@ -36,11 +35,9 @@ from app.cache.redis_cache import (
     get_cache_namespace_version,
     get_user_attempts_state_version,
     get,
-    get_redis_client,
     set,
 )
 from app.core.security import get_current_user, require_roles
-from app.core.test_attempts import AttemptBlockReason, build_attempt_view_state, is_deadline_passed
 from app.models.user import User
 from app.schemas.grading import AttemptScoreUpdate
 from app.schemas.answer import AnswerRead, AttemptSubmitRequest
@@ -53,107 +50,15 @@ from app.repositories import analytics_repo, answer_repo, test_repo, test_attemp
 from app.repositories import question_repo
 from app.services import test_service
 from app.services.answer_service import submit_answers_batch_for_attempt
-from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user, utcnow
+from app.services.test_attempt_api_service import (
+    build_attempt_quota_payload,
+    build_attempt_state_payload,
+    resolve_block_reason_from_policy_error,
+    schedule_attempt_completion_postprocess,
+)
+from app.services.test_runtime import AttemptPolicyError, finalize_attempt_if_expired, resolve_attempt_for_user
 
 router = APIRouter()
-
-
-def _schedule_attempt_completion_postprocess(
-    db: AsyncSession,
-    *,
-    user_id: int,
-    test_id: int,
-    attempt_id: int,
-) -> None:
-    async def enqueue_after_commit() -> None:
-        try:
-            redis = get_redis_client()
-            payload = {
-                "job_type": "attempt_complete",
-                "user_id": int(user_id),
-                "test_id": int(test_id),
-                "attempt_id": int(attempt_id),
-                "source_event": "attempt_completed",
-            }
-            await redis.rpush("answers:postprocess", json.dumps(payload))
-        except Exception:
-            # Queue failures must not break successful submit responses.
-            pass
-
-    add_post_commit_task(db, enqueue_after_commit)
-
-
-def _resolve_block_reason_from_policy_error(exc: AttemptPolicyError) -> AttemptBlockReason | None:
-    code = getattr(exc, "code", "")
-    if code in {"no_attempts", "deadline_passed", "time_limit_exceeded"}:
-        return code
-    return None
-
-
-async def _build_attempt_quota_payload(
-    db: AsyncSession,
-    *,
-    test,
-    user_id: int,
-    forced_block_reason: AttemptBlockReason | None = None,
-) -> TestAttemptQuotaRead:
-    completed_attempts = await test_attempt_repo.count_completed_attempts_for_user_test(db, user_id, test.id)
-    active_attempt = await test_attempt_repo.get_active_attempt(db, user_id, test.id)
-    attempt_state = build_attempt_view_state(
-        max_attempts=test.max_attempts,
-        completed_attempts=completed_attempts,
-        has_active_attempt=active_attempt is not None,
-        deadline_passed=is_deadline_passed(test.deadline),
-        forced_block_reason=forced_block_reason,
-    )
-    return TestAttemptQuotaRead(
-        test_id=test.id,
-        max_attempts=attempt_state["max_attempts"],
-        completed_attempts=attempt_state["completed_attempts"],
-        remaining_attempts=attempt_state["remaining_attempts"],
-        has_active_attempt=attempt_state["has_active_attempt"],
-        ui_status=attempt_state["ui_status"],
-        progress_state=attempt_state["progress_state"],
-        attempt_state=attempt_state["attempt_state"],
-        can_start=attempt_state["can_start"],
-        can_resume=attempt_state["can_resume"],
-        block_reason=attempt_state["block_reason"],
-    )
-
-
-def _build_attempt_state_payload(
-    *,
-    test,
-    attempt,
-    expired_reason: str | None = None,
-) -> TestAttemptStateRead:
-    reference_time = attempt.completed_at or utcnow()
-    elapsed_seconds = max(int((reference_time - attempt.started_at).total_seconds()), 0)
-
-    remaining_seconds: int | None = None
-    time_limit_minutes = test.time_limit_minutes
-    if time_limit_minutes is not None:
-        total_limit_seconds = int(time_limit_minutes) * 60
-        remaining_seconds = max(total_limit_seconds - elapsed_seconds, 0)
-
-    inferred_reason = expired_reason
-    if inferred_reason is None and time_limit_minutes is not None and remaining_seconds == 0:
-        inferred_reason = "time_limit"
-    if inferred_reason is None and test.deadline is not None and reference_time >= test.deadline:
-        inferred_reason = "deadline"
-
-    return TestAttemptStateRead(
-        attempt_id=attempt.id,
-        test_id=attempt.test_id,
-        status=attempt.status,
-        started_at=attempt.started_at,
-        completed_at=attempt.completed_at,
-        time_limit_minutes=time_limit_minutes,
-        elapsed_seconds=elapsed_seconds,
-        remaining_seconds=remaining_seconds,
-        is_expired=inferred_reason in {"time_limit", "deadline"},
-        expired_reason=inferred_reason,
-    )
 
 
 async def _prewarm_answers_cache_for_tests(
@@ -516,7 +421,7 @@ async def start_test_attempt(
         attempt = await resolve_attempt_for_user(db, test, current_user.id)
         await bump_user_attempts_state_version(current_user.id)
         action = "resumed" if active_attempt_before is not None and active_attempt_before.id == attempt.id else "started"
-        quota = await _build_attempt_quota_payload(
+        quota = await build_attempt_quota_payload(
             db,
             test=test,
             user_id=current_user.id,
@@ -539,8 +444,8 @@ async def start_test_attempt(
     except AttemptPolicyError as exc:
         if getattr(exc, "code", "") in {"deadline_passed", "time_limit_exceeded"}:
             await bump_user_attempts_state_version(current_user.id)
-        block_reason = _resolve_block_reason_from_policy_error(exc)
-        quota = await _build_attempt_quota_payload(
+        block_reason = resolve_block_reason_from_policy_error(exc)
+        quota = await build_attempt_quota_payload(
             db,
             test=test,
             user_id=current_user.id,
@@ -565,7 +470,7 @@ async def start_test_attempt(
     except IntegrityError:
         # Defensive fallback for rare concurrent starts when db-level unique
         # conflict races with read-after-rollback recovery.
-        quota = await _build_attempt_quota_payload(
+        quota = await build_attempt_quota_payload(
             db,
             test=test,
             user_id=current_user.id,
@@ -605,7 +510,7 @@ async def get_my_test_attempt_quota(
     current_user: User = Depends(get_current_user),
 ):
     test = await get_visible_test(db, test_id, current_user)
-    return await _build_attempt_quota_payload(
+    return await build_attempt_quota_payload(
         db,
         test=test,
         user_id=current_user.id,
@@ -631,7 +536,7 @@ async def get_attempt_state(
     attempt, reason = await finalize_attempt_if_expired(db, test, attempt)
     if reason is not None:
         await bump_user_attempts_state_version(attempt.user_id)
-    return _build_attempt_state_payload(test=test, attempt=attempt, expired_reason=reason)
+    return build_attempt_state_payload(test=test, attempt=attempt, expired_reason=reason)
 
 
 @router.post("/attempts/{attempt_id}/submit", response_model=TestAttemptRead, status_code=status.HTTP_200_OK)
@@ -690,7 +595,7 @@ async def submit_test_attempt(
         attempt_id=completed_attempt.id,
         sync_rewards=False,
     )
-    _schedule_attempt_completion_postprocess(
+    schedule_attempt_completion_postprocess(
         db,
         user_id=completed_attempt.user_id,
         test_id=completed_attempt.test_id,
@@ -728,7 +633,7 @@ async def complete_test_attempt(
         attempt_id=completed_attempt.id,
         sync_rewards=False,
     )
-    _schedule_attempt_completion_postprocess(
+    schedule_attempt_completion_postprocess(
         db,
         user_id=completed_attempt.user_id,
         test_id=completed_attempt.test_id,
