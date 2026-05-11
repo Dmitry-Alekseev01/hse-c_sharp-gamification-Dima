@@ -130,14 +130,16 @@ const Home = () => {
       </div>
 
       <div className="streak-section">
-        <h2 className="section-title">Текущий стрик: {stats.streakDays} дней</h2>
+        <h2 className="section-title">Активных дней подряд: {stats.streakDays}</h2>
         <div className="streak-calendar">
-          <div className="streak-placeholder">Продолжайте в том же духе</div>
+          <div className="streak-placeholder">
+            Продолжайте в том же духе, чтобы сохранить прогресс!
+          </div>
         </div>
         <p className="streak-motivation">
           {stats.streakDays >= 7
             ? 'Отличная работа! Продолжайте в том же духе!'
-            : 'Пройдите тест сегодня, чтобы продолжить стрик!'}
+            : 'Пройдите тест сегодня, чтобы продолжить серию активных дней!'}
         </p>
       </div>
 

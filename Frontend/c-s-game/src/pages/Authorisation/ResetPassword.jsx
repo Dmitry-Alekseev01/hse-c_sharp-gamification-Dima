@@ -124,9 +124,7 @@ const ResetPassword = () => {
         ) : (
           <div className="success-message">
             <h2 className="success-title">Пароль успешно изменен!</h2>
-            <p className="success-text">
-              Теперь вы можете войти в систему с новым паролем
-            </p>
+            <p className="success-text">Теперь вы можете войти в систему с новым паролем</p>
             <p className="success-text" style={{ marginTop: '-10px', color: '#64748b' }}>
               Перенаправление на страницу входа...
             </p>
