@@ -125,7 +125,7 @@ const MaterialDetails = () => {
                   <div key={test.id} className="test-item">
                     <span className="test-bullet">•</span>
                     <span className="test-name">{test.title}</span>
-                    <Link to={`/tests/${test.id}`} className="take-test-link">
+                    <Link to={`/test/${test.id}`} className="take-test-link">
                       Пройти тест
                     </Link>
                   </div>
